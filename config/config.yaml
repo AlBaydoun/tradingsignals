@@ -1,0 +1,158 @@
+# SignalForge configuration
+#
+# Every value here overrides the dataclass defaults in signalforge/config.py.
+# The two you should change before doing anything else are `account_balance`
+# and `mt5_symbol_suffix`.
+
+# ---------------------------------------------------------------------------
+# What to trade
+# ---------------------------------------------------------------------------
+
+# Start small. Every symbol x timeframe pair is a separate model to train,
+# validate and monitor; twelve symbols across five timeframes is sixty models.
+watchlist:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+  - XAUUSD
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - US500
+  - NAS100
+
+# M1 and M5 are included so you can see for yourself what costs do to them.
+# On most retail spreads they will not survive the cost filter, and the engine
+# will tell you so rather than emitting signals anyway.
+timeframes:
+  - M15
+  - M30
+  - H1
+  - H4
+
+# Brokers append suffixes to symbol names: ".m", "_ecn", ".pro", "#".
+# Check the Market Watch window in MT5 and copy the exact suffix here.
+mt5_symbol_suffix: ""
+
+timezone: UTC
+
+# ---------------------------------------------------------------------------
+# Risk — the settings that decide how much you lose when you are wrong
+# ---------------------------------------------------------------------------
+risk:
+  account_balance: 10000.0
+  account_currency: USD
+
+  # Percent of the account risked if the stop is hit. 0.5% means twenty
+  # consecutive losses cost about 10% of the account. Raise this only after
+  # you have a live track record, not before.
+  risk_percent_per_trade: 0.5
+
+  # Ceiling on total open risk across all positions at once.
+  max_concurrent_risk_percent: 2.0
+
+  sl_atr_mult: 1.5
+  tp_atr_mults: [1.0, 2.0, 3.0]
+
+  structure_lookback: 20
+  structure_buffer_atr: 0.25
+  min_reward_risk: 1.2
+
+  # Reject any trade whose expected move is less than this many multiples of
+  # the round-trip cost. This is the single most effective filter in the system.
+  min_edge_cost_multiple: 2.0
+
+# ---------------------------------------------------------------------------
+# Signal thresholds
+# ---------------------------------------------------------------------------
+signals:
+  # Minimum calibrated model confidence.
+  min_confidence: 0.58
+  # Minimum |P(up) - P(down)|. Confidence alone is not enough — the model must
+  # also clearly favour one side.
+  min_directional_edge: 0.12
+  max_signals_per_run: 8
+  min_bucket_hit_rate: 0.50
+  # A signal is valid for this many bars of its own timeframe.
+  signal_validity_bars: 3
+  # Block new entries this many minutes either side of a high-impact release.
+  news_blackout_minutes: 30
+  allow_medium_impact_trading: true
+
+# ---------------------------------------------------------------------------
+# Labelling — how a "win" is defined during training
+# ---------------------------------------------------------------------------
+labels:
+  upper_atr_mult: 1.5
+  lower_atr_mult: 1.5
+  max_horizon_bars: 24
+  min_cost_multiple: 1.5
+
+# ---------------------------------------------------------------------------
+# Model and validation
+# ---------------------------------------------------------------------------
+model:
+  n_estimators: 400
+  learning_rate: 0.03
+  num_leaves: 31
+  max_depth: 6
+  min_child_samples: 60
+  subsample: 0.8
+  colsample_bytree: 0.7
+  reg_lambda: 1.0
+  random_state: 7
+
+  # Walk-forward validation. More splits gives a more reliable estimate but
+  # needs more history.
+  n_splits: 5
+  # Bars dropped after each test window. Should be at least the label horizon,
+  # or the next fold's training data overlaps this fold's test outcomes.
+  embargo_bars: 24
+  min_train_bars: 2000
+  min_test_bars: 300
+
+  calibration_bins: 10
+  calibration_method: isotonic
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+data:
+  history_bars:
+    M1: 20000
+    M5: 20000
+    M15: 20000
+    M30: 15000
+    H1: 15000
+    H4: 8000
+    D1: 3000
+  live_bars: 1500
+  cache_ttl_seconds: 300
+  request_timeout: 30
+  max_retries: 3
+
+# ---------------------------------------------------------------------------
+# Claude reasoning layer (optional)
+# ---------------------------------------------------------------------------
+# Requires ANTHROPIC_API_KEY. With no key the engine runs identically, using
+# deterministic rule-based explanations instead.
+reasoning:
+  enabled: true
+  model: claude-opus-5
+  effort: high
+  max_tokens: 8000
+  # Hard cap on how far the LLM may move the model's confidence.
+  max_confidence_override: 0.15
+  timeout_seconds: 120
+
+# ---------------------------------------------------------------------------
+# Continuous learning
+# ---------------------------------------------------------------------------
+learning:
+  retrain_every_hours: 24
+  psi_alert_threshold: 0.25
+  performance_window: 50
+  # A model whose live hit rate falls below this gets disabled automatically.
+  min_live_hit_rate: 0.40
+  disable_after_consecutive_losses: 12
