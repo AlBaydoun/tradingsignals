@@ -32,7 +32,8 @@ class DataConfig:
             "M15": 20000,
             "M30": 15000,
             "H1": 15000,
-            "H4": 8000,
+            # H4 is derived from hourly data, which Yahoo caps at ~730 days.
+            "H4": 3000,
             "D1": 3000,
         }
     )
@@ -145,6 +146,13 @@ class SignalConfig:
     # Block new entries this many minutes around a high-impact economic event.
     news_blackout_minutes: int = 30
     allow_medium_impact_trading: bool = True
+    # Refuse signals in market conditions where this model has historically
+    # lost money. Measured per regime and per session during training.
+    enforce_conditional_edge: bool = True
+    # A condition needs at least this many past trades before it is allowed to
+    # veto anything — otherwise a thin slice of a backtest starts making rules.
+    min_regime_trades: int = 25
+    min_regime_profit_factor: float = 1.0
 
 
 @dataclass

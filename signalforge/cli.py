@@ -79,32 +79,81 @@ def cmd_train(args, config: Config) -> int:
     print()
     print("=" * 60)
     if results:
+        from signalforge.models import assess_batch, describe_batch
+
         accuracies = [r["accuracy"] for r in results]
-        significant = [r for r in results if r["significant"]]
         print(f"Trained {len(results)} models, {len(failures)} skipped.")
         print(f"Mean out-of-sample accuracy: {sum(accuracies) / len(accuracies):.4f}")
-        print(
-            f"Models with a statistically significant edge: "
-            f"{len(significant)} of {len(results)}"
-        )
-        if significant:
+
+        # Correct for the size of the search. Testing 40 models produces about
+        # two false positives at the 5% level even when every model is useless.
+        for result in results:
+            result["key"] = f"{result['symbol']}/{result['timeframe']}"
+        assessed = assess_batch(results, alpha=0.05)
+        by_key = {a.key: a for a in assessed}
+
+        print()
+        print(describe_batch(assessed))
+
+        survivors = [a for a in assessed if a.survives_correction]
+        if survivors:
             print()
-            print("Significant models (95% CI entirely above a coin flip):")
-            for result in sorted(
-                significant, key=lambda r: r["ci_low"], reverse=True
-            ):
+            print("Models that survive multiple-comparison correction:")
+            header = (
+                f"  {'MODEL':18s} {'ACC':>6s} {'95% CI':>15s} "
+                f"{'eff.n':>6s} {'q':>7s}  WHERE IT WORKS"
+            )
+            print(header)
+            for entry in sorted(survivors, key=lambda a: a.q_value):
+                result = next(r for r in results if r["key"] == entry.key)
+                edge = result.get("conditional_edge") or {}
+                regimes = edge.get("by_regime", {})
+                good = [
+                    name.replace("_", " ")
+                    for name, slice_ in regimes.items()
+                    if slice_.get("trades", 0) >= 25
+                    and slice_.get("profit_factor", 0) >= 1.0
+                ]
+                where = ", ".join(good[:2]) if good else "not yet mapped"
                 print(
-                    f"  {result['symbol']:10s} {result['timeframe']:4s} "
-                    f"{result['accuracy']:.3f} "
+                    f"  {entry.key:18s} {entry.accuracy:6.3f} "
                     f"[{result['ci_low']:.3f}-{result['ci_high']:.3f}] "
-                    f"eff.n {result['effective_samples']}"
+                    f"{entry.effective_n:6d} {entry.q_value:7.4f}  {where}"
                 )
         else:
             print()
-            print("None of these models demonstrated a statistically significant")
-            print("edge. That is a real result, not a bug — most markets on most")
-            print("timeframes are efficient enough that costs eat any small")
-            print("predictive signal. Trading them anyway is how accounts die.")
+            print("Nothing survived. That is a real result, not a bug — most")
+            print("markets on most timeframes are efficient enough that costs")
+            print("eat any small predictive signal. Trading them anyway is how")
+            print("accounts die.")
+
+        demoted = [a for a in assessed if a.demoted]
+        if demoted:
+            print()
+            print("Demoted by the correction (looked good alone, not in a batch):")
+            for entry in demoted:
+                print(
+                    f"  {entry.key:18s} {entry.accuracy:6.3f} "
+                    f"p={entry.p_value:.4f} -> q={entry.q_value:.4f}"
+                )
+
+        # Where the backtest found each model actually loses money.
+        blocked_any = [
+            r for r in results if (r.get("conditional_edge") or {}).get("by_regime")
+        ]
+        if blocked_any:
+            print()
+            print("Conditional edge maps (regimes that will be blocked live):")
+            for result in blocked_any:
+                regimes = result["conditional_edge"]["by_regime"]
+                losing = [
+                    f"{name.replace('_', ' ')} (PF {s['profit_factor']:.2f}, "
+                    f"{s['trades']} trades)"
+                    for name, s in regimes.items()
+                    if s.get("trades", 0) >= 25 and s.get("profit_factor", 99) < 1.0
+                ]
+                if losing:
+                    print(f"  {result['key']:18s} {'; '.join(losing)}")
     else:
         print("No models trained successfully.")
     return 0 if results else 1

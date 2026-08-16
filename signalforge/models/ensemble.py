@@ -79,6 +79,12 @@ class ModelReport:
     class_balance: dict[str, float] = field(default_factory=dict)
     trained_at: str = ""
     warnings: list[str] = field(default_factory=list)
+    # Where this model's edge actually lives, measured on the walk-forward
+    # backtest. Used at signal time to veto trades in conditions the model has
+    # historically lost money in. See models/conditional.py.
+    conditional_edge: dict = field(default_factory=dict)
+    # Backtest performance after costs, for the ranker and the CLI.
+    backtest: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         out = asdict(self)

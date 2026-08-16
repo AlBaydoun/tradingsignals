@@ -121,11 +121,19 @@ class SignalEngine:
             symbol=symbol,
             timeframe=timeframe,
         )
+
+        # Measure where this model's edge actually lives. A blended accuracy
+        # figure averages a real edge in one regime with a bleed in another;
+        # the map is what lets signal generation refuse the losing conditions.
+        self._measure_conditional_edge(model, report, df, instrument)
+
         self.registry.save(model, symbol, timeframe)
 
         return {
             "symbol": symbol,
             "timeframe": timeframe,
+            "conditional_edge": report.conditional_edge,
+            "backtest": report.backtest,
             "accuracy": report.directional_accuracy,
             "ci_low": report.accuracy_ci_low,
             "ci_high": report.accuracy_ci_high,
@@ -140,6 +148,62 @@ class SignalEngine:
             "label_summary": labels.summary(),
             "warnings": report.warnings,
         }
+
+    def _measure_conditional_edge(self, model, report, df, instrument) -> None:
+        """Backtest the freshly trained model and record where it makes money.
+
+        Runs on walk-forward predictions only. Failure here degrades to an
+        empty map (which gates nothing) rather than blocking training.
+        """
+        cfg = self.config
+        try:
+            from signalforge.backtest import BacktestConfig, walk_forward_backtest
+            from signalforge.models import build_conditional_edge
+
+            detector = RegimeDetector().fit(df)
+            regimes = detector.classify_series(df)["trend_regime"]
+
+            trades, _, performance = walk_forward_backtest(
+                model,
+                df,
+                instrument,
+                config=BacktestConfig(
+                    starting_balance=cfg.risk.account_balance,
+                    risk_percent=cfg.risk.risk_percent_per_trade,
+                ),
+                regimes=regimes,
+                min_confidence=cfg.signals.min_confidence - 0.06,
+                min_edge=cfg.signals.min_directional_edge - 0.04,
+                sl_atr_mult=cfg.risk.sl_atr_mult,
+                tp_atr_mult=cfg.risk.tp_atr_mults[0],
+            )
+
+            edge = build_conditional_edge(
+                trades,
+                min_trades=cfg.signals.min_regime_trades,
+                min_profit_factor=cfg.signals.min_regime_profit_factor,
+            )
+            report.conditional_edge = edge.to_dict()
+            report.backtest = {
+                "trades": performance.trades,
+                "win_rate": performance.win_rate,
+                "profit_factor": performance.profit_factor,
+                "expectancy_r": performance.expectancy_r,
+                "max_drawdown_pct": performance.max_drawdown_pct,
+                "verdict": performance.verdict(),
+            }
+
+            blocked = [s.condition for s in edge.worst_conditions() if s.is_losing]
+            if blocked:
+                report.warnings.append(
+                    "Loses money in "
+                    + ", ".join(c.replace("_", " ") for c in blocked)
+                    + " — signals in those conditions will be blocked."
+                )
+        except Exception as exc:
+            log.warning("Could not measure conditional edge: %s", exc)
+            report.conditional_edge = {}
+            report.backtest = {}
 
     def _context_frames(self, symbol: str, timeframe: str) -> dict[str, pd.DataFrame]:
         """Higher-timeframe frames used for multi-timeframe context."""
@@ -394,6 +458,33 @@ class SignalEngine:
             ):
                 continue
 
+            # Conditional-edge gate. The model may be confident, but if it has
+            # historically lost money in the regime or session holding right
+            # now, that confidence is not worth acting on.
+            conditional_note = ""
+            if cfg.signals.enforce_conditional_edge and model.report:
+                from signalforge.models import ConditionalEdge
+
+                conditional = ConditionalEdge.from_dict(
+                    model.report.conditional_edge or {}
+                )
+                allowed, note = conditional.regime_verdict(
+                    self._current_trend_regime(symbol, df)
+                )
+                if not allowed:
+                    result["blocked"].append(
+                        {"symbol": symbol, "reason": f"{timeframe}: {note}"}
+                    )
+                    continue
+                conditional_note = note
+
+                session_ok, session_note = conditional.session_verdict(now.hour)
+                if not session_ok:
+                    result["blocked"].append(
+                        {"symbol": symbol, "reason": f"{timeframe}: {session_note}"}
+                    )
+                    continue
+
             result["candidates"].append(
                 {
                     "symbol": symbol,
@@ -414,10 +505,20 @@ class SignalEngine:
                     "atr": atr_value,
                     "spread_pips": spread_pips,
                     "instrument": instrument,
+                    "conditional_note": conditional_note,
                 }
             )
 
         return result
+
+    def _current_trend_regime(self, symbol: str, df: pd.DataFrame) -> str:
+        """Trend regime for the latest bar, reusing the cached detector."""
+        detector = self._regime_detectors.get(symbol)
+        if detector is None:
+            detector = RegimeDetector().fit(df)
+            self._regime_detectors[symbol] = detector
+        series = detector.classify_series(df)["trend_regime"]
+        return str(series.iloc[-1]) if len(series) else "range"
 
     def _build_signal(
         self,
@@ -517,6 +618,12 @@ class SignalEngine:
         warnings.extend(size.warnings)
         if correlation_note:
             warnings.append(correlation_note)
+
+        # The regime gate passed; say why, since "this model makes money here"
+        # is stronger evidence than any single-bar indicator reading.
+        conditional_note = candidate.get("conditional_note")
+        if conditional_note:
+            reasoning_text += f" {conditional_note[0].upper()}{conditional_note[1:]}."
 
         model = candidate["model"]
         top_features = model.report.top_features(10) if model.report else []

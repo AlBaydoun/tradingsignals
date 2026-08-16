@@ -7,14 +7,19 @@ concrete way this system can be wrong, and several are things it cannot fix.
 
 ## 1. The edge is small, and it may not exist
 
-Out-of-sample directional accuracy in development ran between 51% and 61%, and
-about half of trained symbol/timeframe combinations showed no statistically
-significant edge at all. Even the ones that did produced a backtest profit
-factor of roughly 1.07 after costs.
+Out-of-sample directional accuracy in development ran between 51% and 64%. In a
+12-model run, two cleared a naive significance test and **neither survived
+correction for the number of models tested**. The best backtest returned a
+profit factor of roughly 1.07 after costs.
 
 A profit factor of 1.07 means that for every $100 lost, $107 is made. That is a
-real edge, but it is thin enough that a broker with slightly worse fills than
-you assumed erases it entirely.
+real edge if it holds, but it is thin enough that a broker with slightly worse
+fills than you assumed erases it entirely.
+
+Be clear-eyed about what "no model survived correction" means: it does not
+prove there is no edge, but it does mean **this system, on this data, has not
+demonstrated one**. Anything you trade on that basis is a bet on a hypothesis,
+not on a measured result.
 
 **If a version of this system ever shows you a 70% win rate and a profit factor
 of 3, something is broken.** Check whether you are backtesting
@@ -89,16 +94,49 @@ Training 10 symbols across 4 timeframes fits 40 models. Some will look good by
 chance alone — with 40 tries at the 95% level, you expect around two false
 positives even if every model is worthless.
 
-The engine reports confidence intervals per model but **does not correct for
-the number of models you trained**. If you train 40 and trade the best 3, you
-are selecting on noise.
+The engine now corrects for this. Every training run applies a
+Benjamini-Hochberg FDR correction across the whole batch and reports which
+models were demoted. From a real 12-model run:
 
-**Mitigation:** decide which instruments to trade *before* seeing the results,
-or demand a much wider margin above 0.5 than a single-model test would need.
+```
+Tested 12 models. 2 clear the naive 5% bar; 0 survive Benjamini-Hochberg.
+
+Demoted:  XAUUSD/H4  0.620  p=0.0110 -> q=0.0661
+          USDJPY/H4  0.638  p=0.0053 -> q=0.0633
+```
+
+Both would have been reported as edges without it.
+
+**What this still does not cover:** the correction only sees the models in *one
+run*. If you train a batch, tweak the features, and train again, you are
+searching across runs and nothing is counting those attempts. Every time you
+adjust a parameter and retrain, you are drawing another sample. The honest
+defence is to decide which instruments and settings you are testing before you
+look at results, and to treat a model discovered on the fifth retune with far
+more suspicion than one found on the first.
 
 ---
 
-## 6. Regime change breaks everything
+## 6. The conditional edge map can itself be overfitted
+
+Training measures each model's performance per regime and per session, then
+blocks the losing conditions live. This is a genuine improvement — but it is
+another way of slicing the same backtest, and slicing finely enough will always
+produce a flattering subset.
+
+The guards are a 25-trade minimum per condition before it may veto anything,
+and only six session buckets rather than 24 hourly ones. Neither makes the map
+*proof*; a regime showing profit factor 1.12 over 40 trades is weak evidence.
+
+Treat the map as a filter that removes obviously bad conditions, not as a
+discovery that a narrow slice is reliably profitable. Set
+`enforce_conditional_edge: false` in the config to trade the blend instead and
+compare — if the gated version does not beat the blend in your live journal,
+the map was fitting noise.
+
+---
+
+## 7. Regime change breaks everything
 
 The model learns relationships that held in its training window. When the
 market's character changes — a new rate regime, a structural shift in crypto
@@ -112,7 +150,7 @@ before.
 
 ---
 
-## 7. News and sentiment are weak signals
+## 8. News and sentiment are weak signals
 
 The sentiment model is a hand-built lexicon, not a language model. It:
 
@@ -131,7 +169,7 @@ shocks arrive without warning.
 
 ---
 
-## 8. What the anomaly detector can and cannot tell you
+## 9. What the anomaly detector can and cannot tell you
 
 **Ignition** (a market moving abnormally right now) is detectable from volume,
 velocity and range expansion. That part works.
@@ -143,7 +181,7 @@ as a reason to watch and to size down, never as a direction.
 
 ---
 
-## 9. The engine cannot trade for you
+## 10. The engine cannot trade for you
 
 There is deliberately no broker integration and no auto-execution. It produces
 signals; you decide and execute. This is a design choice: an unattended system
@@ -154,7 +192,7 @@ numbers correctly, and being awake.
 
 ---
 
-## 10. Things that will silently mislead you
+## 11. Things that will silently mislead you
 
 | Trap | Symptom | Fix |
 |---|---|---|
@@ -163,11 +201,13 @@ numbers correctly, and being awake.
 | Stale `account_balance` | Lot sizes risk the wrong amount | Update `config.yaml` |
 | Trading a `WATCH_ONLY` signal | It was graded unprofitable at that R:R | Only trade actionable grades |
 | Ignoring `eff.n` | Trusting a 60% model built on 90 observations | Prefer tight intervals over high point estimates |
-| Training 40 models, trading the best | Selecting on noise | Pre-commit to instruments |
+| Reading accuracy, ignoring `q` | A demoted model looks like a winner | Trade only what survives the correction |
+| Retuning until something passes | Searching across runs, uncounted | Pre-commit to settings before looking |
+| `enforce_conditional_edge: false` | Trading regimes the model loses in | Leave the gate on unless comparing |
 
 ---
 
-## 11. What would make this genuinely better
+## 12. What would make this genuinely better
 
 If you want to take this further, in rough order of expected value:
 

@@ -38,9 +38,13 @@ INTERVAL_LIMITS: dict[str, tuple[int, int]] = {
     "5m": (60, 60),
     "15m": (60, 60),
     "30m": (60, 60),
-    "60m": (730, 730),
+    "60m": (730, 365),
     "1d": (36500, 36500),
 }
+
+# Roughly what 730 days of hourly bars amounts to on a 24/5 market. Requesting
+# beyond this achieves nothing except throttling.
+MAX_HOURLY_BARS = 12_500
 
 
 class YahooProvider:
@@ -136,9 +140,13 @@ class YahooProvider:
         """Fetch bars, resampling from 60m when Yahoo has no native H4."""
         tf = get_timeframe(timeframe)
 
-        # Yahoo has no 4-hour interval, so build it from hourly bars.
+        # Yahoo has no 4-hour interval, so build it from hourly bars. Yahoo
+        # serves at most ~730 days of hourly data (~12,500 bars), so asking for
+        # 4x an ambitious H4 target just triggers throttling and returns the
+        # same ceiling. Cap the request at what the provider can actually give.
         if timeframe.upper() == "H4":
-            hourly = self.fetch(provider_symbol, "H1", bars * 4 + 50)
+            hourly_needed = min(bars * 4 + 50, MAX_HOURLY_BARS)
+            hourly = self.fetch(provider_symbol, "H1", hourly_needed)
             if hourly.empty:
                 return hourly
             out = resample_ohlcv(hourly, "H4").tail(bars)

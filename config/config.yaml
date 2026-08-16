@@ -80,6 +80,16 @@ signals:
   news_blackout_minutes: 30
   allow_medium_impact_trading: true
 
+  # Refuse signals in conditions where this model has historically lost money.
+  # Training backtests each model per regime and per session and stores the
+  # map; on BTCUSDT H4 that meant trading strong trends (profit factor 1.76)
+  # and sitting out ranges (0.97). Turning this off trades the blend.
+  enforce_conditional_edge: true
+  # A condition needs this many past trades before it may veto anything.
+  # Lower it and thin slices of a backtest start making rules.
+  min_regime_trades: 25
+  min_regime_profit_factor: 1.0
+
 # ---------------------------------------------------------------------------
 # Labelling — how a "win" is defined during training
 # ---------------------------------------------------------------------------
@@ -119,13 +129,16 @@ model:
 # Data
 # ---------------------------------------------------------------------------
 data:
+  # Yahoo serves at most ~730 days of hourly data, and H4 is derived from it,
+  # so asking for more H4 bars than that yields no extra history and only
+  # triggers throttling. Binance has no such limit.
   history_bars:
     M1: 20000
     M5: 20000
     M15: 20000
     M30: 15000
     H1: 15000
-    H4: 8000
+    H4: 3000
     D1: 3000
   live_bars: 1500
   cache_ttl_seconds: 300

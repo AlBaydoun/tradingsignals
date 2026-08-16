@@ -193,6 +193,12 @@ last confirmed swing, never inside three spreads of entry. Lots are computed
 from real pip-value arithmetic — including the cross-currency case, which is
 flagged when it has to be approximated rather than silently sized wrong.
 
+**Conditional edge.** After training, each model is backtested and its
+performance measured *per regime and per session*. The map is stored with the
+model and consulted at signal time: if this model has historically lost money
+in the conditions holding right now, the signal is vetoed however confident the
+model is. A condition needs 25+ past trades before it may veto anything.
+
 **Learning.** Every signal is journalled. The loop resolves open signals
 against subsequent price, compares live results against the model's own
 promises, and disables models whose live hit rate falls below the floor.
@@ -230,22 +236,47 @@ is how backtests learn to lie.
 **Nothing is graded STRONG without a track record.** A signal in an unproven
 confidence band is capped at WEAK no matter how certain the model is.
 
+**Training a batch of models is priced in.** Fitting 12 models means roughly
+one will look significant by chance alone. Every training run applies a
+Benjamini-Hochberg correction across the whole batch and reports which models
+were *demoted* — significant on their own, not significant as one of twelve
+attempts:
+
+```
+Tested 12 models. 2 clear the naive 5% bar; 0 survive Benjamini-Hochberg.
+
+Demoted by the correction (looked good alone, not in a batch):
+  XAUUSD/H4   0.620  p=0.0110 -> q=0.0661
+  USDJPY/H4   0.638  p=0.0053 -> q=0.0633
+```
+
+A 63.8% model is exactly what twelve coin-flip attempts produce. Without this
+correction it would have been reported as an edge.
+
 ---
 
 ## Realistic expectations
 
 From development runs in this repository, on real market data:
 
-- Out-of-sample directional accuracy lands between **51% and 61%**.
-- Roughly **half** of trained symbol/timeframe combinations show no
-  statistically significant edge at all.
+- Out-of-sample directional accuracy lands between **51% and 64%**.
+- Across a 12-model run, **none survived multiple-comparison correction**. Two
+  looked significant individually and were demoted once the size of the search
+  was priced in.
 - A backtest of the best model returned **profit factor 1.07** after costs —
   the engine's own verdict was *"Marginal. The edge is inside the error bars."*
-- The regime breakdown showed the entire edge living in strong trends
-  (PF 1.76) while ranges and weak trends lost money (PF 0.95–0.97).
+- **Every instrument lost money in range-bound markets** (profit factors 0.59
+  to 0.89), and the edge concentrated in trends. That pattern held across
+  crypto, forex and index futures.
 
-That last line is the sort of thing this engine exists to find. A system that
-reported one blended number would have hidden it.
+That last finding is the sort of thing this engine exists to produce, and it is
+now acted on automatically rather than merely reported. On EURUSD H1 the
+blended backtest says *"profit factor 0.83 — do not trade"*, but strong
+downtrends alone run at 1.12. Gating on regime turns a losing model into a
+narrow usable one; a single blended number would have thrown it away.
+
+**Expect the honest answer to usually be "no trade."** A run that produces
+nothing is the common case, not a malfunction.
 
 **M1 and M5 almost never survive the cost filter.** At a 0.8-pip EURUSD spread
 against a 1.5-pip M1 ATR, the round trip consumes most of the expected move.
