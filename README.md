@@ -85,11 +85,20 @@ TRADE SIGNALS (0)
 
 ## Quick start
 
+> **The code is on the `claude/ai-trading-signal-agent-af9nel` branch, not on
+> `main`.** `main` holds only this README. Clone with `-b` or nothing will
+> work.
+
+**Windows:** clone, then double-click `setup.bat`. That is the entire install.
+`check.bat`, `hunt.bat`, `train.bat`, `signals.bat` and `watch.bat` run the
+rest — no command line needed after the clone. See
+[`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+
 ```bash
-git clone https://github.com/AlBaydoun/tradingsignals.git
+git clone -b claude/ai-trading-signal-agent-af9nel https://github.com/AlBaydoun/tradingsignals.git
 cd tradingsignals
 
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # 1. Check data providers, calendar and news are reachable

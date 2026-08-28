@@ -45,26 +45,83 @@ connection. Windows, macOS and Linux all work.
 
 ## Step 1 — Install it
 
+**The code lives on a branch, not on `main`.** Cloning without `-b` gets you a
+repository containing nothing but a README, and every command afterwards fails
+with "No module named signalforge". Copy the command below exactly.
+
+### Windows
+
+Open **Command Prompt** (press Start, type `cmd`, hit Enter) and run:
+
+```bat
+cd %USERPROFILE%\Documents
+git clone -b claude/ai-trading-signal-agent-af9nel https://github.com/AlBaydoun/tradingsignals.git
+cd tradingsignals
+```
+
+Then **double-click `setup.bat`** in that folder. It creates the environment,
+installs everything, and runs the health check. Nothing else to type.
+
+After that you have five clickable files:
+
+| Double-click | What it does |
+|---|---|
+| `setup.bat` | One-time install (run once) |
+| `check.bat` | Verify data, symbol names and affordability |
+| `hunt.bat` | Rank every market by movement per unit of cost |
+| `train.bat` | Fit the models (~30 min, weekly) |
+| `signals.bat` | Get signals right now |
+| `watch.bat` | Run continuously until you close the window |
+
+If you prefer to type it yourself, the Windows commands are:
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m signalforge.cli doctor
+```
+
+Note `.venv\Scripts\activate` — **not** `source .venv/bin/activate`. `source`
+is a Mac/Linux command and Windows will tell you it is "not recognized".
+
+### Mac / Linux
+
 ```bash
-git clone https://github.com/AlBaydoun/tradingsignals.git
+git clone -b claude/ai-trading-signal-agent-af9nel https://github.com/AlBaydoun/tradingsignals.git
 cd tradingsignals
 
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-That is the whole installation. Every command below assumes you are in the
-`tradingsignals` folder with the virtual environment active — if you open a new
-terminal later, run `cd tradingsignals && source .venv/bin/activate` again.
+### Do I need Visual Studio or VS Code?
+
+**No.** Command Prompt is enough, and the `.bat` files mean you barely need
+that. VS Code is only worth installing if you want a nicer editor for
+`config/config.yaml` — Notepad opens it perfectly well.
+
+### Python version
+
+Anything from **3.10 upward**, including 3.14. Every dependency has a Windows
+wheel. If `python` is not recognised at all, install it from
+[python.org/downloads](https://www.python.org/downloads/) and **tick "Add
+python.exe to PATH"** on the first screen of the installer — that checkbox is
+the single most common cause of trouble.
+
+Every command below assumes you are in the `tradingsignals` folder with the
+environment active. Opening a new terminal later? Run `cd tradingsignals` then
+`.venv\Scripts\activate` (Windows) or `source .venv/bin/activate` (Mac).
 
 ---
 
 ## Step 2 — Check it can see the markets
 
-```bash
-python -m signalforge.cli doctor
+```bat
+REM Windows: double-click check.bat, or type
+.venv\Scripts\python -m signalforge.cli doctor
 ```
 
 You should get bar counts for all seven instruments, a calendar event count,
@@ -128,8 +185,9 @@ this**, and it is the difference between an honest result and a flattering one.
 
 ## Step 4 — Find out what is worth trading right now
 
-```bash
-python -m signalforge.cli hunt --timeframe H1
+```bat
+REM Windows: double-click hunt.bat, or type
+.venv\Scripts\python -m signalforge.cli hunt --timeframe H1
 ```
 
 This is the "hunt the volatile trades" command. It surveys all 31 instruments
@@ -172,11 +230,15 @@ is worth studying, not that it is predictable. That is Step 5's job.
 
 ## Step 5 — Train, then generate signals
 
-```bash
-# Takes 1-3 minutes per model. Seven symbols x two timeframes ~ 30 minutes.
-python -m signalforge.cli train --timeframes H1 H4
+```bat
+REM Windows: double-click train.bat, then signals.bat. Or type:
+.venv\Scripts\python -m signalforge.cli train --timeframes H1 H4
+.venv\Scripts\python -m signalforge.cli signals
+```
 
-# Then, any time:
+```bash
+# Mac / Linux
+python -m signalforge.cli train --timeframes H1 H4
 python -m signalforge.cli signals
 ```
 
@@ -285,6 +347,11 @@ discovery.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `No module named signalforge` | Cloned `main`, which holds only a README | Re-clone with `-b claude/ai-trading-signal-agent-af9nel` |
+| `No such file: requirements.txt` | Same cause as above | Same fix |
+| `'source' is not recognized` | Mac command on Windows | Use `.venv\Scripts\activate` |
+| `'python' is not recognized` | Python not on PATH | Reinstall, tick "Add python.exe to PATH" |
+| `pip` says "Defaulting to user installation" | You are outside the venv | Activate it, or use the `.bat` files |
 | `Unknown instrument 'XYZ'` | Not in the universe | `hunt --all` lists everything it knows |
 | Signal names a symbol you can't find in MT5 | Broker spells it differently | Step 2 — fix `instruments:` in config |
 | `doctor` shows 0 bars for a symbol | Provider throttling | Wait a few minutes and rerun |
