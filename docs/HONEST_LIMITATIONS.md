@@ -181,7 +181,45 @@ as a reason to watch and to size down, never as a direction.
 
 ---
 
-## 10. The engine cannot trade for you
+## 10. What `hunt` can and cannot tell you
+
+`hunt` ranks markets by how much they are moving relative to their own history,
+divided by what they cost to trade. Both halves are measurements, and both are
+useful. Neither is a prediction.
+
+**Volatility is a necessary condition for profit, never a sufficient one.** A
+market at the 95th percentile of its own ATR range is a market where a correct
+call pays and an incorrect one costs, in equal measure. The score says the
+first is possible; it says nothing about which you will get.
+
+The specific trap: an instrument scoring 70 on `hunt` and failing every
+significance test in `train` is a completely coherent result, and a common one.
+Movement you cannot predict is not opportunity, it is variance.
+
+The cost half is more solid, because a spread is a fact rather than an
+estimate — but the spread the engine uses is the one in your config, and the
+defaults are guesses. A `COST` column computed from a wrong spread is
+confidently wrong.
+
+---
+
+## 11. Broker symbols are yours to verify
+
+The engine cannot see your Market Watch. It prints the symbol names from your
+config and assumes they are right. If your broker's Nasdaq is `US100.cash` and
+you configured `US100.std`, nothing in the engine will notice — you will simply
+get signals for a symbol you cannot find.
+
+Worse, and quieter: `contract_size` varies between brokers on exactly the
+instruments where it matters most. Index CFDs in particular range from 1 to 50
+units per lot depending on the broker. A wrong contract size produces a lot
+size that risks a multiple of what you configured, and nothing will flag it.
+Check one trade's margin requirement against the engine's stated risk before
+trusting the sizing.
+
+---
+
+## 12. The engine cannot trade for you
 
 There is deliberately no broker integration and no auto-execution. It produces
 signals; you decide and execute. This is a design choice: an unattended system
@@ -192,12 +230,14 @@ numbers correctly, and being awake.
 
 ---
 
-## 11. Things that will silently mislead you
+## 13. Things that will silently mislead you
 
 | Trap | Symptom | Fix |
 |---|---|---|
 | Backtesting `predict_signal()` | Win rate above 75% | Use `walk_forward_backtest()` |
-| Wrong `mt5_symbol_suffix` | Signals reference symbols you cannot find | Check MT5 Market Watch |
+| Wrong `mt5_symbol` override | Signals reference symbols you cannot find | Check `doctor`'s mapping table |
+| Wrong `contract_size` | Lot sizes risk a multiple of what you set | Compare margin against stated risk |
+| Trading a high `hunt` score | Volatility is not predictability | Only trade what `train` validates |
 | Stale `account_balance` | Lot sizes risk the wrong amount | Update `config.yaml` |
 | Trading a `WATCH_ONLY` signal | It was graded unprofitable at that R:R | Only trade actionable grades |
 | Ignoring `eff.n` | Trusting a 60% model built on 90 observations | Prefer tight intervals over high point estimates |
@@ -207,7 +247,7 @@ numbers correctly, and being awake.
 
 ---
 
-## 12. What would make this genuinely better
+## 14. What would make this genuinely better
 
 If you want to take this further, in rough order of expected value:
 

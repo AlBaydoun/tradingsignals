@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from signalforge import __version__
 from signalforge.config import Config, load_config
+from signalforge.universe import get_instrument, mt5_name, resolve_symbol
 
 log = logging.getLogger("signalforge")
 
@@ -323,6 +324,102 @@ def cmd_scan(args, config: Config) -> int:
     return 0
 
 
+def cmd_hunt(args, config: Config) -> int:
+    """Survey a wide universe for markets worth trading, before any training.
+
+    This is the "which pairs, which market" question answered from price data
+    alone. It ranks on movement relative to each instrument's own history,
+    divided by what that instrument costs to trade. It does not predict
+    direction and does not need a model.
+    """
+    from signalforge.data import DataRouter
+    from signalforge.models.registry import ModelRegistry
+    from signalforge.selection import default_universe, describe, hunt
+
+    router = DataRouter(config.data)
+    registry = ModelRegistry(config.model.model_dir)
+
+    if args.symbols:
+        symbols = [resolve_symbol(s) for s in args.symbols]
+    elif args.all:
+        symbols = default_universe(args.markets)
+    else:
+        symbols = sorted(set(config.watchlist) | set(default_universe(args.markets)))
+
+    timeframe = args.timeframe
+    now = datetime.now(timezone.utc)
+    trained = {entry.symbol for entry in registry.list_models()}
+
+    print(f"Hunting across {len(symbols)} instruments on {timeframe}.")
+    print("Ranking by movement relative to each market's own history, divided")
+    print("by what it costs to trade. No model required, no direction claimed.")
+    print()
+
+    frames = router.get_many(symbols, timeframe, 500)
+
+    spreads: dict[str, float] = {}
+    if args.live_spreads:
+        for symbol in symbols:
+            try:
+                spreads[symbol] = router.effective_spread_pips(symbol)
+            except Exception:
+                continue
+
+    results = hunt(
+        frames,
+        timeframe,
+        hour_utc=now.hour,
+        is_weekend=now.weekday() >= 5,
+        spreads=spreads,
+        models=trained,
+        limit=args.limit,
+    )
+
+    if args.json:
+        print(json.dumps([r.to_dict() for r in results], indent=2))
+        return 0
+
+    if not results:
+        print("Nothing could be surveyed. Run `doctor` to check data providers.")
+        return 1
+
+    header = (
+        f"{'':2s} {'SYMBOL':10s} {'MT5':12s} {'SCORE':>6s} {'ATR%':>7s} "
+        f"{'COST':>6s} {'VOL%ILE':>8s} {'EXPAND':>7s} {'EFF':>5s} {'20-BAR':>8s}"
+    )
+    print(header)
+    print("-" * len(header))
+    for index, r in enumerate(results, 1):
+        mark = "*" if r.has_model else " "
+        print(
+            f"{mark:2s} {r.symbol:10s} {r.mt5_symbol:12s} {r.score:6.1f} "
+            f"{r.atr_pct:6.2f}% {r.cost_ratio:6.1f} {r.vol_percentile:7.0f}% "
+            f"{r.vol_expansion:7.2f} {r.efficiency_ratio:5.2f} {r.change_pct:+7.2f}%"
+        )
+        if index <= args.explain:
+            print(f"     {r.verdict}")
+            for reason in r.reasons:
+                print(f"       - {reason}")
+
+    print()
+    print("COST = how many round-trip spreads one ATR pays for. Below 1.5 the")
+    print("instrument is untradable on this timeframe however much it moves.")
+    print("EXPAND = current ATR over its own median. EFF = 0..1 trend vs chop.")
+    print("* = a trained model already exists for this symbol.")
+    print()
+    print(describe(results))
+
+    untrained = [r for r in results[:5] if not r.has_model and r.score >= 40.0]
+    if untrained:
+        names = " ".join(r.symbol for r in untrained)
+        print()
+        print("Worth training next:")
+        print(f"  python -m signalforge.cli train --symbols {names} "
+              f"--timeframes {timeframe}")
+
+    return 0
+
+
 def cmd_learn(args, config: Config) -> int:
     from signalforge.learning import LearningLoop
     from signalforge.signals import SignalEngine
@@ -456,7 +553,34 @@ def cmd_doctor(args, config: Config) -> int:
     print("\nRisk configuration:")
     print(f"  balance {config.risk.account_balance} {config.risk.account_currency}")
     print(f"  risk per trade {config.risk.risk_percent_per_trade}%")
-    print(f"  MT5 symbol suffix {config.mt5_symbol_suffix!r}")
+    print(f"  fallback MT5 suffix {config.mt5_symbol_suffix!r}")
+
+    # The single most common cause of an unusable signal is a symbol name the
+    # user cannot find in Market Watch, so print the mapping in full and say
+    # plainly that only they can verify it.
+    print("\nMT5 symbol mapping — check every one of these against Market Watch:")
+    unmapped: list[str] = []
+    for symbol in config.watchlist:
+        try:
+            instrument = get_instrument(symbol)
+        except KeyError:
+            problems.append(f"watchlist contains unknown symbol {symbol!r}")
+            continue
+        name = mt5_name(symbol, config.mt5_symbol_suffix)
+        source = "config" if instrument.mt5_symbol_is_exact else "default"
+        print(
+            f"  {symbol:10s} -> {name:14s} ({source}, "
+            f"spread {instrument.typical_spread_pips:g} pips = "
+            f"{instrument.typical_spread_pips * instrument.pip_size:g} price units)"
+        )
+        if not instrument.mt5_symbol_is_exact:
+            unmapped.append(symbol)
+    if unmapped:
+        print(
+            f"\n  {len(unmapped)} symbol(s) use the default name. If your broker "
+            "spells\n  any of them differently, add it under `instruments:` in "
+            "config.yaml."
+        )
     if config.risk.risk_percent_per_trade > 2.0:
         problems.append(
             f"risk per trade is {config.risk.risk_percent_per_trade}% — "
@@ -561,6 +685,20 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--crypto-wide", action="store_true", help="scan all Binance pairs")
     scan.set_defaults(func=cmd_scan)
 
+    hunt_p = sub.add_parser(
+        "hunt", help="survey a wide universe for the most tradable markets"
+    )
+    hunt_p.add_argument("--symbols", nargs="+", help="limit the hunt to these")
+    hunt_p.add_argument("--timeframe", default="H1")
+    hunt_p.add_argument("--markets", nargs="+", help="forex crypto metals indices energy")
+    hunt_p.add_argument("--all", action="store_true", help="ignore the watchlist entirely")
+    hunt_p.add_argument("--limit", type=int, default=20)
+    hunt_p.add_argument("--explain", type=int, default=5, help="explain the top N")
+    hunt_p.add_argument("--live-spreads", action="store_true",
+                        help="measure spreads now instead of using estimates")
+    hunt_p.add_argument("--json", action="store_true")
+    hunt_p.set_defaults(func=cmd_hunt)
+
     learn = sub.add_parser("learn", help="resolve signals and police models")
     learn.add_argument("--retrain", action="store_true")
     learn.set_defaults(func=cmd_learn)
@@ -589,6 +727,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Could not load configuration: {exc}", file=sys.stderr)
         return 1
+
+    # Accept broker names anywhere a symbol is expected, so `--symbols US100.std`
+    # and `backtest WTI.m H1` work without anyone consulting a mapping table.
+    if getattr(args, "symbols", None):
+        args.symbols = [resolve_symbol(s) for s in args.symbols]
+    if getattr(args, "symbol", None):
+        args.symbol = resolve_symbol(args.symbol)
 
     try:
         return args.func(args, config)

@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from signalforge.universe import apply_overrides
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "config.yaml"
 DEFAULT_DATA_DIR = REPO_ROOT / "data"
@@ -215,8 +217,19 @@ class Config:
     timeframes: list[str] = field(
         default_factory=lambda: ["M5", "M15", "M30", "H1", "H4"]
     )
-    # MT5 brokers append suffixes like ".m" or "_ecn" to symbol names.
+    # MT5 brokers append suffixes like ".m" or "_ecn" to symbol names. This is
+    # the fallback for instruments with no explicit entry in `instruments`.
     mt5_symbol_suffix: str = ""
+    # Per-instrument overrides, applied onto signalforge/universe.py at load.
+    # Real accounts mix suffixes — XAUUSD, US100.std and WTI.m together — which
+    # no single global suffix can express, so each can be named exactly:
+    #
+    #   instruments:
+    #     NAS100: {mt5_symbol: "US100.std", typical_spread_pips: 8.0}
+    #
+    # Overridable: mt5_symbol, typical_spread_pips, commission_per_lot,
+    # contract_size, digits, pip_size, min_lot, lot_step, max_lot, notes.
+    instruments: dict[str, dict[str, Any]] = field(default_factory=dict)
     timezone: str = "UTC"
 
     def to_dict(self) -> dict[str, Any]:
@@ -257,7 +270,7 @@ def load_config(path: str | Path | None = None) -> Config:
     if os.getenv("SIGNALFORGE_MT5_SUFFIX"):
         merged["mt5_symbol_suffix"] = os.environ["SIGNALFORGE_MT5_SUFFIX"]
 
-    return Config(
+    config = Config(
         data=DataConfig(**merged["data"]),
         features=FeatureConfig(**merged["features"]),
         labels=LabelConfig(**merged["labels"]),
@@ -269,5 +282,12 @@ def load_config(path: str | Path | None = None) -> Config:
         watchlist=merged["watchlist"],
         timeframes=merged["timeframes"],
         mt5_symbol_suffix=merged["mt5_symbol_suffix"],
+        instruments=merged.get("instruments") or {},
         timezone=merged["timezone"],
     )
+
+    # Apply the per-instrument overrides to the shared universe immediately, so
+    # every entry point — CLI, API, engine — sees the same broker names and the
+    # same cost assumptions without having to remember to ask.
+    apply_overrides(config.instruments)
+    return config

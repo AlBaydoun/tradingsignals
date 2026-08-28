@@ -12,7 +12,7 @@ own broker's real numbers before you trust any backtest.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import time
 
 # Trading session windows in UTC. Used both to gate signals and as features.
@@ -44,6 +44,9 @@ class Instrument:
     contract_size: float  # units per 1.00 lot
     typical_spread_pips: float  # round-trip cost estimate, in pips
     commission_per_lot: float = 0.0  # round-trip commission in account currency
+    # True when mt5_symbol came from the user's config and is therefore already
+    # the exact Market Watch string. The global broker suffix is not appended.
+    mt5_symbol_is_exact: bool = False
     min_lot: float = 0.01
     lot_step: float = 0.01
     max_lot: float = 100.0
@@ -179,6 +182,20 @@ INSTRUMENTS: dict[str, Instrument] = {
         base_currency="WTI",
         active_sessions=("london", "newyork"),
     ),
+    "BRENT": Instrument(
+        symbol="BRENT",
+        market="energy",
+        provider="yahoo",
+        provider_symbol="BZ=F",
+        mt5_symbol="BRENT",
+        digits=2,
+        pip_size=0.01,
+        contract_size=1000.0,
+        typical_spread_pips=4.0,
+        quote_currency="USD",
+        base_currency="BRENT",
+        active_sessions=("london", "newyork"),
+    ),
     # ---- Index CFDs -----------------------------------------------------
     "US500": Instrument(
         symbol="US500",
@@ -189,7 +206,8 @@ INSTRUMENTS: dict[str, Instrument] = {
         digits=2,
         pip_size=0.1,
         contract_size=50.0,
-        typical_spread_pips=4.0,
+        # 6 pips at 0.1 = 0.6 index points.
+        typical_spread_pips=6.0,
         quote_currency="USD",
         base_currency="SPX",
         active_sessions=("newyork", "london"),
@@ -203,10 +221,26 @@ INSTRUMENTS: dict[str, Instrument] = {
         digits=2,
         pip_size=0.1,
         contract_size=20.0,
-        typical_spread_pips=6.0,
+        # 18 pips at 0.1 = 1.8 index points, a realistic retail Nasdaq spread.
+        typical_spread_pips=18.0,
         quote_currency="USD",
         base_currency="NDX",
         active_sessions=("newyork", "london"),
+    ),
+    "US30": Instrument(
+        symbol="US30",
+        market="indices",
+        provider="yahoo",
+        provider_symbol="YM=F",
+        mt5_symbol="US30",
+        digits=1,
+        pip_size=1.0,
+        contract_size=1.0,
+        typical_spread_pips=3.0,
+        quote_currency="USD",
+        base_currency="DJI",
+        active_sessions=("newyork", "london"),
+        notes="Dow. Broker contract sizes vary widely — verify in MT5.",
     ),
     "GER40": Instrument(
         symbol="GER40",
@@ -217,7 +251,8 @@ INSTRUMENTS: dict[str, Instrument] = {
         digits=2,
         pip_size=0.1,
         contract_size=25.0,
-        typical_spread_pips=5.0,
+        # 12 pips at 0.1 = 1.2 index points.
+        typical_spread_pips=12.0,
         quote_currency="EUR",
         base_currency="DAX",
         active_sessions=("london",),
@@ -252,21 +287,171 @@ INSTRUMENTS: dict[str, Instrument] = {
 # Which currencies each instrument is exposed to. Used to map economic-calendar
 # events onto instruments: an ECB decision matters for EURUSD, not for BTCUSDT.
 INSTRUMENT_CURRENCIES: dict[str, tuple[str, ...]] = {}
-for _sym, _inst in INSTRUMENTS.items():
-    if _inst.market == "forex":
-        INSTRUMENT_CURRENCIES[_sym] = (_sym[:3], _sym[3:])
-    elif _inst.market in {"metals", "energy"}:
-        INSTRUMENT_CURRENCIES[_sym] = ("USD",)
-    elif _inst.market == "indices":
-        INSTRUMENT_CURRENCIES[_sym] = (_inst.quote_currency,)
-    else:  # crypto reacts to USD macro, but weakly
-        INSTRUMENT_CURRENCIES[_sym] = ("USD",)
+
+
+def _rebuild_currency_map() -> None:
+    """Recompute the currency exposure map from the current INSTRUMENTS."""
+    INSTRUMENT_CURRENCIES.clear()
+    for sym, inst in INSTRUMENTS.items():
+        if inst.market == "forex":
+            INSTRUMENT_CURRENCIES[sym] = (sym[:3], sym[3:])
+        elif inst.market in {"metals", "energy"}:
+            INSTRUMENT_CURRENCIES[sym] = ("USD",)
+        elif inst.market == "indices":
+            INSTRUMENT_CURRENCIES[sym] = (inst.quote_currency,)
+        else:  # crypto reacts to USD macro, but weakly
+            INSTRUMENT_CURRENCIES[sym] = ("USD",)
+
+
+_rebuild_currency_map()
+
+
+# ---------------------------------------------------------------------------
+# Broker naming
+# ---------------------------------------------------------------------------
+# The same market has a different name at every broker. These are the names the
+# engine will silently accept and translate to its own canonical symbol, so
+# `train --symbols US100 WTI BTCUSD` works without anyone reading a table first.
+ALIASES: dict[str, str] = {
+    # Indices
+    "US100": "NAS100",
+    "USTEC": "NAS100",
+    "NAS": "NAS100",
+    "NDX100": "NAS100",
+    "NASDAQ": "NAS100",
+    "SPX500": "US500",
+    "US500CASH": "US500",
+    "SP500": "US500",
+    "DJ30": "US30",
+    "DOW": "US30",
+    "WALLSTREET": "US30",
+    "US30CASH": "US30",
+    "DAX40": "GER40",
+    "GER30": "GER40",
+    "DE40": "GER40",
+    "NIKKEI": "JP225",
+    "JPN225": "JP225",
+    # Energy
+    "WTI": "USOIL",
+    "CRUDE": "USOIL",
+    "OIL": "USOIL",
+    "USCRUDE": "USOIL",
+    "XTIUSD": "USOIL",
+    "UKOIL": "BRENT",
+    "BRENTOIL": "BRENT",
+    "XBRUSD": "BRENT",
+    # Metals
+    "GOLD": "XAUUSD",
+    "SILVER": "XAGUSD",
+    "XAU": "XAUUSD",
+    "XAG": "XAGUSD",
+    # Crypto: MT5 brokers quote against USD, the data comes from a USDT pair.
+    "BTCUSD": "BTCUSDT",
+    "ETHUSD": "ETHUSDT",
+    "SOLUSD": "SOLUSDT",
+    "BNBUSD": "BNBUSDT",
+    "XRPUSD": "XRPUSDT",
+    "ADAUSD": "ADAUSDT",
+    "DOGEUSD": "DOGEUSDT",
+    "AVAXUSD": "AVAXUSDT",
+    "LINKUSD": "LINKUSDT",
+    "MATICUSD": "MATICUSDT",
+    "BITCOIN": "BTCUSDT",
+    "ETHEREUM": "ETHUSDT",
+}
+
+# Fields a user may override per instrument in config.yaml. Anything else is
+# rejected loudly rather than ignored quietly — a typo in a spread setting that
+# silently does nothing is worse than an error.
+OVERRIDABLE_FIELDS = frozenset(
+    {
+        "mt5_symbol",
+        "typical_spread_pips",
+        "commission_per_lot",
+        "contract_size",
+        "digits",
+        "pip_size",
+        "min_lot",
+        "lot_step",
+        "max_lot",
+        "notes",
+    }
+)
+
+
+def resolve_symbol(name: str) -> str:
+    """Translate a broker or colloquial name into the engine's canonical one.
+
+    `resolve_symbol("US100.std")` is `"NAS100"`, and so is `resolve_symbol("us100")`.
+    Broker suffixes are stripped only when what remains is recognisable, so an
+    unknown name still produces a useful error rather than a mangled one.
+    """
+    raw = name.strip().upper()
+    if raw in INSTRUMENTS:
+        return raw
+    if raw in ALIASES:
+        return ALIASES[raw]
+
+    # Try again without a broker suffix: "US100.STD", "EURUSD_ECN", "BTCUSD#".
+    stripped = raw
+    for separator in (".", "_", "-", "#", "+"):
+        stripped = stripped.split(separator, 1)[0]
+    stripped = stripped.rstrip("#+")
+    if stripped in INSTRUMENTS:
+        return stripped
+    if stripped in ALIASES:
+        return ALIASES[stripped]
+
+    # Also check any instrument whose configured MT5 name matches exactly. This
+    # catches overrides the user set themselves, e.g. "WTI.M" -> USOIL.
+    for sym, inst in INSTRUMENTS.items():
+        if inst.mt5_symbol.upper() == raw:
+            return sym
+    return raw
+
+
+def apply_overrides(overrides: dict[str, dict]) -> list[str]:
+    """Apply per-instrument settings from config onto the universe.
+
+    This exists because real brokers are inconsistent: the same account may
+    carry `XAUUSD`, `US100.std` and `WTI.m` side by side, which no single global
+    suffix can express. Setting `mt5_symbol` here marks it exact, so the global
+    suffix is not appended on top of it.
+
+    Returns the list of canonical symbols that were changed.
+    """
+    changed: list[str] = []
+    for name, settings in (overrides or {}).items():
+        if not settings:
+            continue
+        symbol = resolve_symbol(name)
+        if symbol not in INSTRUMENTS:
+            raise KeyError(
+                f"Override for unknown instrument {name!r}. "
+                f"Known symbols: {', '.join(sorted(INSTRUMENTS))}"
+            )
+        unknown = set(settings) - OVERRIDABLE_FIELDS
+        if unknown:
+            raise KeyError(
+                f"Cannot override {sorted(unknown)} on {symbol}. "
+                f"Overridable fields: {', '.join(sorted(OVERRIDABLE_FIELDS))}"
+            )
+        patch = dict(settings)
+        if "mt5_symbol" in patch:
+            patch["mt5_symbol_is_exact"] = True
+        INSTRUMENTS[symbol] = replace(INSTRUMENTS[symbol], **patch)
+        changed.append(symbol)
+
+    if changed:
+        _rebuild_currency_map()
+    return changed
 
 
 def get_instrument(symbol: str) -> Instrument:
-    """Look up an instrument, with a helpful error if it is unknown."""
+    """Look up an instrument by canonical name, alias, or broker name."""
+    resolved = resolve_symbol(symbol)
     try:
-        return INSTRUMENTS[symbol.upper()]
+        return INSTRUMENTS[resolved]
     except KeyError:
         raise KeyError(
             f"Unknown instrument {symbol!r}. "
@@ -275,8 +460,15 @@ def get_instrument(symbol: str) -> Instrument:
 
 
 def mt5_name(symbol: str, suffix: str = "") -> str:
-    """The exact string to type into the MT5 mobile search box."""
-    return f"{get_instrument(symbol).mt5_symbol}{suffix}"
+    """The exact string to type into the MT5 mobile search box.
+
+    An instrument whose MT5 name was set explicitly in config is returned
+    verbatim; the global suffix only applies to the ones that were not.
+    """
+    instrument = get_instrument(symbol)
+    if instrument.mt5_symbol_is_exact:
+        return instrument.mt5_symbol
+    return f"{instrument.mt5_symbol}{suffix}"
 
 
 def instruments_by_market(market: str) -> list[Instrument]:

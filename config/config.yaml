@@ -2,7 +2,7 @@
 #
 # Every value here overrides the dataclass defaults in signalforge/config.py.
 # The two you should change before doing anything else are `account_balance`
-# and `mt5_symbol_suffix`.
+# and the `instruments:` block, where you name your broker's exact symbols.
 
 # ---------------------------------------------------------------------------
 # What to trade
@@ -10,30 +10,65 @@
 
 # Start small. Every symbol x timeframe pair is a separate model to train,
 # validate and monitor; twelve symbols across five timeframes is sixty models.
+# Start small. Every symbol x timeframe pair is a separate model to train,
+# validate and monitor, and every extra model makes it more likely one looks
+# good by chance — the Benjamini-Hochberg correction applied at the end of
+# training divides by exactly this number. Seven symbols is a real search;
+# thirty is a fishing expedition.
+#
+# Use `hunt` to survey a wider universe without training anything: it ranks by
+# volatility and cost efficiency from price data alone, and tells you which
+# instruments would be worth adding here.
 watchlist:
-  - EURUSD
-  - GBPUSD
-  - USDJPY
-  - AUDUSD
-  - XAUUSD
-  - BTCUSDT
-  - ETHUSDT
-  - SOLUSDT
-  - US500
-  - NAS100
+  - XAUUSD      # gold
+  - XAGUSD      # silver
+  - BTCUSDT     # Bitcoin (data from Binance, traded as BTCUSD on MT5)
+  - NAS100      # Nasdaq 100
+  - US30        # Dow Jones 30
+  - USOIL       # WTI crude
+  - BRENT       # Brent crude
 
-# M1 and M5 are included so you can see for yourself what costs do to them.
-# On most retail spreads they will not survive the cost filter, and the engine
-# will tell you so rather than emitting signals anyway.
+# M1 and M5 are deliberately absent. At a realistic retail spread the round
+# trip eats most of an M1 move; you can add them back and watch the engine
+# refuse to trade them, but it costs an hour of training to learn that.
 timeframes:
   - M15
   - M30
   - H1
   - H4
 
-# Brokers append suffixes to symbol names: ".m", "_ecn", ".pro", "#".
-# Check the Market Watch window in MT5 and copy the exact suffix here.
+# ---------------------------------------------------------------------------
+# Broker symbol names
+# ---------------------------------------------------------------------------
+
+# Fallback suffix for instruments with no explicit entry below. Most accounts
+# need this only if *every* symbol carries the same suffix.
 mt5_symbol_suffix: ""
+
+# Per-instrument overrides. Real accounts mix suffixes freely — metals bare,
+# indices on ".std", energy on ".m" — which one global suffix cannot express.
+# Open Market Watch in MT5, and copy each name here exactly as it appears.
+#
+# Anything named here is used verbatim: the global suffix is NOT added on top.
+#
+# `typical_spread_pips` is the number that decides whether a backtest is honest.
+# The defaults are conservative retail guesses. Measure your own broker's
+# average spread during the hours you actually trade and put it here.
+instruments:
+  XAUUSD:
+    mt5_symbol: "XAUUSD"
+  XAGUSD:
+    mt5_symbol: "XAGUSD"
+  BTCUSDT:
+    mt5_symbol: "BTCUSD"
+  NAS100:
+    mt5_symbol: "US100.std"
+  US30:
+    mt5_symbol: "US30.std"
+  USOIL:
+    mt5_symbol: "WTI.m"
+  BRENT:
+    mt5_symbol: "BRENT.m"
 
 timezone: UTC
 

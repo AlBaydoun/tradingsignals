@@ -1,5 +1,11 @@
 """Instrument and timeframe selection."""
 
+from signalforge.selection.hunter import (
+    HuntResult,
+    default_universe,
+    describe,
+    hunt,
+)
 from signalforge.selection.ranker import (
     Ranking,
     best_timeframe,
@@ -18,4 +24,8 @@ __all__ = [
     "cost_ratio",
     "liquidity_score",
     "summarise",
+    "HuntResult",
+    "hunt",
+    "describe",
+    "default_universe",
 ]

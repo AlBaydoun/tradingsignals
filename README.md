@@ -107,6 +107,10 @@ Finance (forex, metals, indices); the economic calendar and news feeds are
 public. The optional Claude reasoning layer needs `ANTHROPIC_API_KEY`, and the
 engine runs identically without it.
 
+**New here?** [`docs/QUICKSTART.md`](docs/QUICKSTART.md) is the seven-step
+version, including where to run the thing and how to read the output on a
+phone.
+
 ### Before risking money, change two settings
 
 In `config/config.yaml`:
@@ -114,11 +118,24 @@ In `config/config.yaml`:
 ```yaml
 risk:
   account_balance: 10000.0     # your real balance
-mt5_symbol_suffix: ""          # your broker's suffix: ".m", "_ecn", ".pro"
+
+# Your broker's exact Market Watch names. Real accounts mix suffixes freely,
+# so each symbol is named individually rather than sharing one global suffix.
+instruments:
+  XAUUSD:  {mt5_symbol: "XAUUSD"}
+  NAS100:  {mt5_symbol: "US100.std"}
+  USOIL:   {mt5_symbol: "WTI.m"}
+  BTCUSDT: {mt5_symbol: "BTCUSD"}
 ```
 
-Check the exact symbol name in the MT5 Market Watch window. If your broker
-calls it `BTCUSD.m`, the suffix is `.m`.
+`doctor` prints the resulting mapping in full so you can check every line
+against Market Watch. Broker names also work as input everywhere — `backtest
+US100.std H1` and `backtest NAS100 H1` are the same command.
+
+The other number worth your attention is `typical_spread_pips`. The defaults
+are conservative retail guesses; every backtest result depends on them, and
+replacing them with your broker's measured spreads is the single highest-value
+change you can make.
 
 ---
 
@@ -126,7 +143,8 @@ calls it `BTCUSD.m`, the suffix is `.m`.
 
 | Command | What it does |
 |---|---|
-| `doctor` | Check data providers, models, calendar, news and config |
+| `doctor` | Check data providers, models, calendar, news and symbol mapping |
+| `hunt` | Rank the whole universe by movement per unit of cost, before training |
 | `train` | Fit and walk-forward validate models |
 | `signals` | Generate signals now (`--json`, `--compact`, `--brief`) |
 | `backtest SYMBOL TF` | Honest out-of-sample backtest (`--detail` for regime/hour breakdown) |
@@ -134,6 +152,33 @@ calls it `BTCUSD.m`, the suffix is `.m`.
 | `learn` | Resolve open signals, police failing models (`--retrain`) |
 | `journal` | Live results versus what the models promised |
 | `watch` | Run continuously (`--interval 300`) |
+
+### Finding what is worth trading
+
+`hunt` answers *which market* before any model exists. It surveys every
+instrument the engine can price and ranks on movement relative to each
+instrument's own history, **divided by what that instrument costs to trade**:
+
+```
+   SYMBOL     MT5           SCORE    ATR%   COST  VOL%ILE  EXPAND   EFF   20-BAR
+--------------------------------------------------------------------------------
+   XAGUSD     XAGUSD         71.3   0.79%    9.3      82%    1.14  0.35   +3.58%
+     active and affordable — worth training
+   SOLUSDT    SOLUSD         58.1   1.35%    9.0      71%    1.14  0.12   +1.54%
+     - movement is choppy (efficiency 0.12) — range, not trend
+```
+
+Cost is a multiplier on the score rather than one term among several, because
+no amount of volatility rescues an instrument whose spread is the size of its
+range. Anything below 1.5 round trips per ATR is dropped outright.
+
+Volatility is always measured against the instrument's *own* distribution.
+Gold moving 1% and EURUSD moving 1% are not the same event, so nothing is
+compared cross-sectionally.
+
+**`hunt` says nothing about direction** — a high score means the market is
+worth studying, not that it is predictable. `train` and `backtest` answer that,
+and usually the answer is no.
 
 An HTTP API is included for feeding phones and bots:
 
@@ -302,7 +347,7 @@ list. The short version:
 ## Testing
 
 ```bash
-pytest tests/ -q     # 69 tests
+pytest tests/ -q     # 126 tests
 ```
 
 The suite is weighted toward the properties that matter: every indicator is
