@@ -1,5 +1,9 @@
-# Windows launchers must keep CRLF endings or cmd.exe mis-parses them.
+# Later rules win, so the catch-all must come first and the exceptions after.
+
+# Normalise everything to LF in the repository and on checkout.
+* text=auto eol=lf
+
+# Windows launchers are the exception: cmd.exe mis-parses a .bat file with
+# bare LF endings, so these are checked out with CRLF on every platform.
 *.bat text eol=crlf
 *.cmd text eol=crlf
-# Everything else is normalised to LF in the repository.
-* text=auto eol=lf
