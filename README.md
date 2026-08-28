@@ -286,6 +286,15 @@ and [`docs/HONEST_LIMITATIONS.md`](docs/HONEST_LIMITATIONS.md) §10 walks
 through the whole thing, because the interesting part is that no number looked
 wrong at any point.
 
+**A significant model can still be a sampling accident.** In the same run,
+Yahoo throttled the Dow feed and US30 H1 trained on about a fifth of its
+history: 62.7% accuracy on ~180 effective observations, clearing both the
+confidence interval and the Benjamini-Hochberg correction. Retrained on the
+full series it was 51.1% on ~983 — a coin flip. Every guard passed, because
+every guard tests whether a number is real *given its sample*, not whether the
+sample resembles the world. Training now warns when a provider returns
+materially less history than requested.
+
 **Costs are charged everywhere.** Spread, two-sided slippage and commission on
 every simulated trade. Extra slippage on stops, because gaps go through them.
 When one bar spans both the stop and the target, the stop is assumed to have
@@ -318,12 +327,15 @@ correction it would have been reported as an edge.
 
 From development runs in this repository, on real market data:
 
-- Out-of-sample directional accuracy lands between **51% and 64%**.
+- Out-of-sample directional accuracy lands between **50% and 65%**.
 - Across a 12-model run, **none survived multiple-comparison correction**. Two
   looked significant individually and were demoted once the size of the search
-  was priced in.
-- A backtest of the best model returned **profit factor 1.07** after costs —
-  the engine's own verdict was *"Marginal. The edge is inside the error bars."*
+  was priced in. A later 14-model run on gold, silver, Bitcoin, the Nasdaq, the
+  Dow and both crude grades produced **one survivor**, whose backtest then
+  generated 13 trades — not enough to judge.
+- The best backtest with a usable number of trades returned **profit factor
+  1.07 over 116 trades** — the engine's own verdict was *"Marginal. The edge is
+  inside the error bars."*
 - **Every instrument lost money in range-bound markets** (profit factors 0.59
   to 0.89), and the edge concentrated in trends. That pattern held across
   crypto, forex and index futures.

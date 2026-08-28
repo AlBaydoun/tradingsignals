@@ -83,6 +83,27 @@ class SignalEngine:
                 f"{cfg.model.min_train_bars + cfg.model.min_test_bars}"
             )
 
+        # A throttled provider degrades to whatever is in the cache rather than
+        # failing, which is the right call for signal generation and a trap for
+        # training: a model fitted on a fifth of the history has a fifth of the
+        # sample, a wider spread of outcomes, and a decent chance of a
+        # flattering accuracy that survives every statistical guard the engine
+        # has — because those guards test whether the number is real given the
+        # sample, not whether the sample is representative.
+        #
+        # This happened in development. Yahoo throttled the Dow feed mid-run and
+        # US30 H1 trained on roughly a fifth of its history, reporting 62.7% on
+        # ~180 effective observations and surviving Benjamini-Hochberg. Retrained
+        # on the full series it was 51.1% on ~983 — a coin flip.
+        history_warnings: list[str] = []
+        if len(df) < bars * 0.6:
+            history_warnings.append(
+                f"Only {len(df)} of the {bars} requested bars were available "
+                f"({len(df) / bars:.0%}). A provider was probably throttling. "
+                "Every number below is computed on a short and possibly "
+                "unrepresentative slice — retrain before trusting it."
+            )
+
         context = self._context_frames(symbol, timeframe)
         features = build_feature_matrix(df, timeframe, cfg.features, context)
         X, dropped = clean_for_model(features)
@@ -146,7 +167,9 @@ class SignalEngine:
             "features": X.shape[1],
             "dropped_features": len(dropped),
             "label_summary": labels.summary(),
-            "warnings": report.warnings,
+            "bars_loaded": len(df),
+            "bars_requested": bars,
+            "warnings": history_warnings + report.warnings,
         }
 
     def _measure_conditional_edge(self, model, report, df, instrument) -> None:

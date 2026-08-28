@@ -7,10 +7,12 @@ concrete way this system can be wrong, and several are things it cannot fix.
 
 ## 1. The edge is small, and it may not exist
 
-Out-of-sample directional accuracy in development ran between 51% and 64%. In a
-12-model run, two cleared a naive significance test and **neither survived
-correction for the number of models tested**. The best backtest returned a
-profit factor of roughly 1.07 after costs.
+Out-of-sample directional accuracy in development ran between 50% and 65%. In a
+14-model run on gold, silver, Bitcoin, the Nasdaq, the Dow and both crude
+grades, **one model survived correction for the number of models tested** — and
+its own backtest then produced 13 trades, which the engine grades as unproven.
+An earlier 12-model run had zero survivors. The best backtest with a usable
+number of trades returned a profit factor of roughly 1.07 after costs.
 
 A profit factor of 1.07 means that for every $100 lost, $107 is made. That is a
 real edge if it holds, but it is thin enough that a broker with slightly worse
@@ -58,6 +60,13 @@ bar's open. It still cannot model:
   target distances to the actual fill, but a gap still means you entered
   somewhere other than where the signal was computed. See section 10 for what
   happens when that is handled wrongly.
+- **The backtest and the live path place stops differently.** The backtest
+  uses a pure ATR stop; live signals take the *wider* of that and a structure
+  stop beyond the last confirmed swing, then floor it at three spreads. Live
+  stops are therefore usually wider, which means smaller positions and a
+  different win-rate/payoff mix than the backtest measured. The direction of
+  the difference is conservative, but it is a difference, and it means the
+  backtest is not measuring precisely the strategy you will trade.
 - **Spread widening.** Spreads triple around news and at the daily rollover.
   The backtest uses one fixed number.
 - **Slippage on gaps.** A weekend gap through your stop fills wherever the
@@ -226,7 +235,35 @@ rather than silent.
 
 ---
 
-## 11. Your account may be too small for your watchlist
+## 11. A guard that passes is not a guard that helps
+
+The same development run produced a second lesson, and it is arguably more
+important than the first because the engine's defences all *worked* and still
+let it through.
+
+Yahoo throttled the Dow feed mid-training. The engine did what it is built to
+do under throttling: degraded to cached history rather than failing. US30 H1
+was therefore fitted on roughly a fifth of its history, and reported **62.7%
+accuracy on ~180 effective observations**. That cleared the confidence
+interval. It cleared Benjamini-Hochberg across fourteen models. It was, on its
+own terms, a legitimate finding.
+
+Retrained on the full series it was **51.1% on ~983 observations**. A coin flip.
+
+Nothing was broken. Every guard in the engine tests whether a number is real
+*given the sample it was computed on*. None of them can tell you the sample was
+a fifth of what you asked for and drawn from a single quarter of market
+conditions.
+
+Training now warns when it receives materially less history than requested.
+That helps, but the general point stands and cannot be engineered away:
+**statistical significance is a statement about sampling error, not about
+whether your sample resembles the world.** A model can be significant and
+useless at the same time, and the two failures look identical from inside.
+
+---
+
+## 12. Your account may be too small for your watchlist
 
 Position sizing rounds **down** to the broker's lot step, so risk never exceeds
 what you configured. The consequence is not obvious: when one minimum lot risks
@@ -245,7 +282,7 @@ round.
 
 ---
 
-## 12. What `hunt` can and cannot tell you
+## 13. What `hunt` can and cannot tell you
 
 `hunt` ranks markets by how much they are moving relative to their own history,
 divided by what they cost to trade. Both halves are measurements, and both are
@@ -267,7 +304,7 @@ confidently wrong.
 
 ---
 
-## 13. Broker symbols are yours to verify
+## 14. Broker symbols are yours to verify
 
 The engine cannot see your Market Watch. It prints the symbol names from your
 config and assumes they are right. If your broker's Nasdaq is `US100.cash` and
@@ -283,7 +320,7 @@ trusting the sizing.
 
 ---
 
-## 14. The engine cannot trade for you
+## 15. The engine cannot trade for you
 
 There is deliberately no broker integration and no auto-execution. It produces
 signals; you decide and execute. This is a design choice: an unattended system
@@ -294,7 +331,7 @@ numbers correctly, and being awake.
 
 ---
 
-## 15. Things that will silently mislead you
+## 16. Things that will silently mislead you
 
 | Trap | Symptom | Fix |
 |---|---|---|
@@ -304,6 +341,7 @@ numbers correctly, and being awake.
 | Trading a high `hunt` score | Volatility is not predictability | Only trade what `train` validates |
 | One trade carrying the backtest | Profit factor above ~2 on few trades | Check `largest_win` against total profit |
 | An instrument that never signals | Min lot risks over budget | `doctor` reports affordability |
+| A model trained during throttling | Far fewer bars than requested | Training now warns; retrain and compare |
 | Stale `account_balance` | Lot sizes risk the wrong amount | Update `config.yaml` |
 | Trading a `WATCH_ONLY` signal | It was graded unprofitable at that R:R | Only trade actionable grades |
 | Ignoring `eff.n` | Trusting a 60% model built on 90 observations | Prefer tight intervals over high point estimates |
@@ -313,7 +351,7 @@ numbers correctly, and being awake.
 
 ---
 
-## 16. What would make this genuinely better
+## 17. What would make this genuinely better
 
 If you want to take this further, in rough order of expected value:
 
