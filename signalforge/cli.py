@@ -350,10 +350,11 @@ def cmd_hunt(args, config: Config) -> int:
     now = datetime.now(timezone.utc)
     trained = {entry.symbol for entry in registry.list_models()}
 
-    print(f"Hunting across {len(symbols)} instruments on {timeframe}.")
-    print("Ranking by movement relative to each market's own history, divided")
-    print("by what it costs to trade. No model required, no direction claimed.")
-    print()
+    if not args.json:
+        print(f"Hunting across {len(symbols)} instruments on {timeframe}.")
+        print("Ranking by movement relative to each market's own history, divided")
+        print("by what it costs to trade. No model required, no direction claimed.")
+        print()
 
     frames = router.get_many(symbols, timeframe, 500)
 
@@ -581,6 +582,8 @@ def cmd_doctor(args, config: Config) -> int:
             "spells\n  any of them differently, add it under `instruments:` in "
             "config.yaml."
         )
+
+    _report_affordability(config, problems)
     if config.risk.risk_percent_per_trade > 2.0:
         problems.append(
             f"risk per trade is {config.risk.risk_percent_per_trade}% — "
@@ -596,6 +599,73 @@ def cmd_doctor(args, config: Config) -> int:
     else:
         print("All checks passed.")
     return 1 if problems else 0
+
+
+def _report_affordability(config: Config, problems: list[str]) -> None:
+    """Say which watchlist instruments the account cannot actually trade.
+
+    Position sizing rounds *down* to the broker's lot step so that risk never
+    exceeds the configured percentage. The consequence is that when one minimum
+    lot risks more than the budget, every signal is silently skipped — no error,
+    no warning, just an instrument that never produces a trade. That is a
+    reasonable default and a terrible thing to discover by accident.
+    """
+    from signalforge.data import DataRouter
+    from signalforge.features import indicators as ta
+    from signalforge.risk import minimum_balance_for
+
+    balance = config.risk.account_balance
+    risk_pct = config.risk.risk_percent_per_trade
+    budget = balance * risk_pct / 100.0
+
+    print(
+        f"\nAffordability at {balance:,.0f} {config.risk.account_currency} "
+        f"and {risk_pct}% risk ({budget:,.2f} per trade):"
+    )
+
+    router = DataRouter(config.data)
+    blocked: list[str] = []
+    for symbol in config.watchlist:
+        try:
+            instrument = get_instrument(symbol)
+        except KeyError:
+            continue
+        for timeframe in config.timeframes:
+            df = router.get_bars(symbol, timeframe, 200)
+            if df.empty or len(df) < 20:
+                continue
+            atr = ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1]
+            if not atr or atr != atr:
+                continue
+            needed = minimum_balance_for(
+                instrument,
+                entry_price=float(df["close"].iloc[-1]),
+                stop_distance=config.risk.sl_atr_mult * float(atr),
+                risk_percent=risk_pct,
+                account_currency=config.risk.account_currency,
+            )
+            if needed > balance:
+                blocked.append(
+                    f"  {symbol:10s} {timeframe:4s} needs ~{needed:,.0f} "
+                    f"(smallest lot risks {needed * risk_pct / 100.0:,.2f})"
+                )
+
+    if blocked:
+        for line in blocked:
+            print(line)
+        print(
+            "\n  These will never produce a signal at the current settings — the "
+            "smallest\n  position your broker allows risks more than your budget, "
+            "and sizing rounds\n  down rather than up. Raise the balance, raise "
+            "the risk percentage, or drop\n  them from the watchlist. Do not "
+            "assume the model is at fault."
+        )
+        problems.append(
+            f"{len(blocked)} symbol/timeframe combinations are unaffordable at "
+            f"{balance:,.0f} and {risk_pct}% risk"
+        )
+    else:
+        print("  Every watchlist combination is tradable at the minimum lot.")
 
 
 def cmd_watch(args, config: Config) -> int:

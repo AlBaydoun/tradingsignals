@@ -12,6 +12,7 @@ from signalforge.risk.sizing import (
     PositionSize,
     calculate_lots,
     correlation_adjusted_risk,
+    minimum_balance_for,
     pip_value_per_lot,
     portfolio_heat,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "minimum_win_rate",
     "PositionSize",
     "calculate_lots",
+    "minimum_balance_for",
     "pip_value_per_lot",
     "portfolio_heat",
     "correlation_adjusted_risk",

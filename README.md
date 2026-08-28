@@ -143,7 +143,7 @@ change you can make.
 
 | Command | What it does |
 |---|---|
-| `doctor` | Check data providers, models, calendar, news and symbol mapping |
+| `doctor` | Data, models, calendar, news, symbol mapping and affordability |
 | `hunt` | Rank the whole universe by movement per unit of cost, before training |
 | `train` | Fit and walk-forward validate models |
 | `signals` | Generate signals now (`--json`, `--compact`, `--brief`) |
@@ -272,6 +272,20 @@ XAUUSD  H4: accuracy 0.6000 [95% CI 0.496-0.692] eff.n 92   <- edge not signific
 The 60% model is *worse evidence* than the 56% one. A model whose interval
 includes 0.5 has not demonstrated an edge, whatever its point estimate says.
 
+**A backtest that looks too good is treated as a bug report.** During
+development XAUUSD H4 reported a 72.3% win rate and a profit factor of 3.24 on
+a correctly purged walk-forward run. The model and the validation were both
+fine; the backtester was anchoring stops to the signal bar's close while
+entering at the next bar's open. A 66-point gap in gold left a 3.4-point stop
+where 69 was intended, sizing bought 14x the normal lot to keep the dollar risk
+constant, and the resulting 31R trade was 48% of all profit in the run.
+
+Re-anchored to the actual fill, the same model returns **profit factor 1.06
+over 13 trades** — graded unproven. Every trade now carries `entry_gap_atr`,
+and [`docs/HONEST_LIMITATIONS.md`](docs/HONEST_LIMITATIONS.md) §10 walks
+through the whole thing, because the interesting part is that no number looked
+wrong at any point.
+
 **Costs are charged everywhere.** Spread, two-sided slippage and commission on
 every simulated trade. Extra slippage on stops, because gaps go through them.
 When one bar spans both the stop and the target, the stop is assumed to have
@@ -347,7 +361,7 @@ list. The short version:
 ## Testing
 
 ```bash
-pytest tests/ -q     # 126 tests
+pytest tests/ -q     # 131 tests
 ```
 
 The suite is weighted toward the properties that matter: every indicator is

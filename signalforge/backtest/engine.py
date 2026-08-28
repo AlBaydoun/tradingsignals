@@ -55,6 +55,9 @@ class Position:
     risk_amount: float
     confidence: float = 0.0
     regime: str = ""
+    # How far the entry bar's open sat from the signal bar's close, in ATR.
+    # Large values are gaps, which used to quietly rewrite the trade's risk.
+    entry_gap_atr: float = 0.0
     meta: dict = field(default_factory=dict)
 
 
@@ -140,6 +143,19 @@ class Backtester:
         signal_conf = signals.reindex(df.index).get(
             "confidence", pd.Series(0.0, index=df.index)
         ).fillna(0.0).to_numpy()
+        # Optional: risk expressed as a distance rather than an absolute level.
+        # Present on anything built by `signals_from_model`; absent on hand-made
+        # signal frames, which fall back to the levels as given.
+        aligned_signals = signals.reindex(df.index)
+        signal_sl_dist = aligned_signals.get(
+            "stop_distance", pd.Series(np.nan, index=df.index)
+        ).to_numpy()
+        signal_tp_dist = aligned_signals.get(
+            "target_distance", pd.Series(np.nan, index=df.index)
+        ).to_numpy()
+        signal_atr = aligned_signals.get(
+            "atr", pd.Series(np.nan, index=df.index)
+        ).to_numpy()
 
         stop_slip = (
             cfg.slippage_pips * cfg.stop_slippage_multiplier * inst.pip_size
@@ -191,6 +207,7 @@ class Backtester:
                         "direction": position.direction,
                         "entry_price": position.entry_price,
                         "exit_price": exit_price,
+                        "entry_gap_atr": position.entry_gap_atr,
                         "stop_loss": position.stop_loss,
                         "take_profit": position.take_profit,
                         "size_lots": position.size_lots,
@@ -225,6 +242,25 @@ class Backtester:
                         + cfg.slippage_pips * inst.pip_size
                     )
 
+                    # Re-anchor the risk to where we actually got in.
+                    #
+                    # Without this, a gap between the signal bar's close and the
+                    # entry bar's open silently rewrites the trade. A real case
+                    # from XAUUSD H4: gold gapped 66 points into a short signal,
+                    # leaving the close-anchored stop 3.4 points from the entry
+                    # instead of the intended 69. Risk-based sizing then bought
+                    # 14x the normal lot against a 1:33 reward-to-risk; that one
+                    # trade returned 31R and was 48% of the whole backtest's
+                    # profit — a profit factor of 3.24 that fell to 1.68 without
+                    # it. The signal's intent is "risk 1.5 ATR to make 1 ATR",
+                    # and that intent is a distance, not a price.
+                    gap_atr = 0.0
+                    if np.isfinite(signal_sl_dist[i]) and signal_sl_dist[i] > 0:
+                        stop = entry - direction * signal_sl_dist[i]
+                        target = entry + direction * signal_tp_dist[i]
+                        if np.isfinite(signal_atr[i]) and signal_atr[i] > 0:
+                            gap_atr = float((raw_entry - closes[i]) / signal_atr[i])
+
                     # A stop on the wrong side of the entry is a bad signal.
                     valid = (
                         (stop < entry < target)
@@ -246,6 +282,7 @@ class Backtester:
                                     risk_amount=balance
                                     * (cfg.risk_percent / 100.0),
                                     confidence=float(signal_conf[i]),
+                                    entry_gap_atr=gap_atr,
                                     regime=str(regimes.iloc[i])
                                     if regimes is not None and i < len(regimes)
                                     else "",
@@ -371,4 +408,11 @@ def signals_from_model(
         close + tp_atr_mult * atr_,
         np.where(direction < 0, close - tp_atr_mult * atr_, np.nan),
     )
+    # The absolute levels above are anchored to *this* bar's close, but entry
+    # happens at the next bar's open. When those differ — a gap — the levels no
+    # longer express the risk the signal intended. The distances do, so they are
+    # carried separately and re-anchored to the real entry by the backtester.
+    out["stop_distance"] = np.where(direction != 0, sl_atr_mult * atr_, np.nan)
+    out["target_distance"] = np.where(direction != 0, tp_atr_mult * atr_, np.nan)
+    out["atr"] = atr_
     return out

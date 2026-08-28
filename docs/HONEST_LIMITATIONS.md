@@ -54,6 +54,10 @@ This engine does the standard things right — purged walk-forward validation,
 costs on every trade, stop-before-target on ambiguous bars, entry at the next
 bar's open. It still cannot model:
 
+- **Gaps between the signal and the entry.** The engine re-anchors stop and
+  target distances to the actual fill, but a gap still means you entered
+  somewhere other than where the signal was computed. See section 10 for what
+  happens when that is handled wrongly.
 - **Spread widening.** Spreads triple around news and at the daily rollover.
   The backtest uses one fixed number.
 - **Slippage on gaps.** A weekend gap through your stop fills wherever the
@@ -181,7 +185,67 @@ as a reason to watch and to size down, never as a direction.
 
 ---
 
-## 10. What `hunt` can and cannot tell you
+## 10. A worked example of this document being right
+
+Section 1 says: *if a version of this system ever shows you a 70% win rate and
+a profit factor of 3, something is broken.* That prediction came true during
+development, and the failure is worth understanding because nothing about it
+looked wrong.
+
+XAUUSD H4 reported a **72.3% win rate and a profit factor of 3.24** on a
+correctly purged, walk-forward, cost-charged backtest. The model was fine. The
+validation was fine. The bug was one line of arithmetic in the backtester.
+
+Stops and targets were computed from the signal bar's **close**, but entry
+happens at the next bar's **open**. On 20 April 2026 gold gapped 66 points into
+a short signal. The intended stop was 69 points away; the close-anchored stop
+ended up **3.4 points** from the actual entry. Risk-based sizing did exactly
+what it was told — it bought 14 times the normal position to put the same
+dollars at risk across a much shorter distance — and the reward-to-risk became
+1:33. The target hit. That single trade returned **31R** and accounted for
+**48% of all profit in the backtest**.
+
+Remove it and the profit factor was 1.68. Fix the anchoring properly — express
+risk as a *distance* and re-anchor to the real entry — and it was **1.06 over
+13 trades**, which the engine grades as unproven.
+
+Three things are worth taking from this:
+
+- **The bug inflated results by a factor of three and produced no error, no
+  warning, and no implausible-looking intermediate value.** Every individual
+  number was internally consistent.
+- **It was found by asking why a good number was good**, not by a test failing.
+  The tests now cover it, but they were written after the fact.
+- **The same class of error can still be present elsewhere.** A backtest that
+  looks better than roughly 1.2 deserves this treatment: find the largest
+  winning trade, check what fraction of total profit it is, and read the trade
+  record for it line by line.
+
+Every trade now carries `entry_gap_atr` so this specific failure is visible
+rather than silent.
+
+---
+
+## 11. Your account may be too small for your watchlist
+
+Position sizing rounds **down** to the broker's lot step, so risk never exceeds
+what you configured. The consequence is not obvious: when one minimum lot risks
+more than your per-trade budget, every signal is silently skipped. No error, no
+warning — just an instrument that never produces a trade.
+
+At $10,000 with 0.5% risk — a $50 budget — the smallest lot of gold on H4 with
+a 1.5-ATR stop risks about $53, and silver about $82. Neither will ever fire.
+`doctor` now reports this explicitly, but the underlying constraint is real:
+some instruments require a larger account, a higher risk percentage, or a
+tighter stop than the strategy calls for.
+
+Do not "solve" it by raising `risk_percent_per_trade` until everything fits.
+That is choosing your risk to suit your watchlist rather than the other way
+round.
+
+---
+
+## 12. What `hunt` can and cannot tell you
 
 `hunt` ranks markets by how much they are moving relative to their own history,
 divided by what they cost to trade. Both halves are measurements, and both are
@@ -203,7 +267,7 @@ confidently wrong.
 
 ---
 
-## 11. Broker symbols are yours to verify
+## 13. Broker symbols are yours to verify
 
 The engine cannot see your Market Watch. It prints the symbol names from your
 config and assumes they are right. If your broker's Nasdaq is `US100.cash` and
@@ -219,7 +283,7 @@ trusting the sizing.
 
 ---
 
-## 12. The engine cannot trade for you
+## 14. The engine cannot trade for you
 
 There is deliberately no broker integration and no auto-execution. It produces
 signals; you decide and execute. This is a design choice: an unattended system
@@ -230,7 +294,7 @@ numbers correctly, and being awake.
 
 ---
 
-## 13. Things that will silently mislead you
+## 15. Things that will silently mislead you
 
 | Trap | Symptom | Fix |
 |---|---|---|
@@ -238,6 +302,8 @@ numbers correctly, and being awake.
 | Wrong `mt5_symbol` override | Signals reference symbols you cannot find | Check `doctor`'s mapping table |
 | Wrong `contract_size` | Lot sizes risk a multiple of what you set | Compare margin against stated risk |
 | Trading a high `hunt` score | Volatility is not predictability | Only trade what `train` validates |
+| One trade carrying the backtest | Profit factor above ~2 on few trades | Check `largest_win` against total profit |
+| An instrument that never signals | Min lot risks over budget | `doctor` reports affordability |
 | Stale `account_balance` | Lot sizes risk the wrong amount | Update `config.yaml` |
 | Trading a `WATCH_ONLY` signal | It was graded unprofitable at that R:R | Only trade actionable grades |
 | Ignoring `eff.n` | Trusting a 60% model built on 90 observations | Prefer tight intervals over high point estimates |
@@ -247,7 +313,7 @@ numbers correctly, and being awake.
 
 ---
 
-## 14. What would make this genuinely better
+## 16. What would make this genuinely better
 
 If you want to take this further, in rough order of expected value:
 

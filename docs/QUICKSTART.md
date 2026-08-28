@@ -91,6 +91,19 @@ instruments:
 This is the one step people skip and then wonder why a signal names a symbol
 they cannot find.
 
+`doctor` also tells you which instruments your account cannot afford:
+
+```
+Affordability at 10,000 USD and 0.5% risk (50.00 per trade):
+  XAUUSD     H4   needs ~10,655 (smallest lot risks 53.27)
+  XAGUSD     H4   needs ~16,382 (smallest lot risks 81.91)
+```
+
+Sizing rounds *down* so risk never exceeds what you set, which means an
+instrument whose smallest lot risks more than your budget silently never fires.
+Gold on H4 at a $10,000 balance is one of those. Now you know why, rather than
+concluding the model is broken.
+
 ---
 
 ## Step 3 — Set your real numbers

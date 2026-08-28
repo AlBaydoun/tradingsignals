@@ -166,6 +166,42 @@ def calculate_lots(
     )
 
 
+def minimum_balance_for(
+    instrument: Instrument,
+    *,
+    entry_price: float,
+    stop_distance: float,
+    risk_percent: float,
+    account_currency: str = "USD",
+    conversion_rate: float | None = None,
+) -> float:
+    """The smallest balance at which one minimum lot fits inside the risk budget.
+
+    Below this the account cannot trade the instrument at all *at that risk
+    setting*: the broker's smallest position risks more than the configured
+    percentage, and since sizing rounds down rather than up, every signal is
+    silently skipped.
+
+    That silence is the problem this exists to break. A user with $10,000 at
+    0.5% who wonders why gold on H4 never produces a signal deserves to be told
+    that one 0.01 lot with a 52-point stop puts $52 at risk against a $50
+    budget — not to conclude the model is broken.
+
+    Returns 0.0 when the instrument cannot be priced at all.
+    """
+    if stop_distance <= 0 or risk_percent <= 0:
+        return 0.0
+
+    stop_pips = stop_distance / instrument.pip_size
+    value_per_pip, _, _ = pip_value_per_lot(
+        instrument, entry_price, account_currency, conversion_rate
+    )
+    risk_per_min_lot = stop_pips * value_per_pip * instrument.min_lot
+    if risk_per_min_lot <= 0:
+        return 0.0
+    return float(risk_per_min_lot / (risk_percent / 100.0))
+
+
 def portfolio_heat(
     open_risks: list[float], account_balance: float
 ) -> tuple[float, bool]:

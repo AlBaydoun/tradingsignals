@@ -255,3 +255,115 @@ class TestBacktesterPessimism:
         if not trades.empty:
             assert (trades["cost"] > 0).all(), "every trade must pay a cost"
             assert report.total_costs > 0
+
+
+class TestGapAnchoring:
+    """A gap between the signal bar and the entry bar must not rewrite risk.
+
+    Stops and targets are computed from the signal bar's close, but entry
+    happens at the next bar's open. When the market gaps between the two, a
+    close-anchored stop can end up a fraction of its intended distance from the
+    entry — and risk-based sizing then buys a correspondingly enormous position
+    against a reward-to-risk the signal never asked for.
+
+    This is not hypothetical. On XAUUSD H4, gold gapped 66 points into a short
+    signal, leaving a 3.4-point stop where 69 was intended, 14x the normal lot
+    size, and a single 31R trade that was 48% of the entire backtest's profit.
+    The headline profit factor was 3.24; without that one trade it was 1.68.
+    """
+
+    @staticmethod
+    def _gap_frame(gap: float) -> pd.DataFrame:
+        """Twelve quiet bars, then a gap up, then a slide down."""
+        closes = [100.0] * 12 + [100.0 + gap] + [100.0 + gap - i for i in range(1, 9)]
+        index = pd.date_range("2025-01-01", periods=len(closes), freq="4h", tz="UTC")
+        close = pd.Series(closes, index=index)
+        return pd.DataFrame(
+            {
+                # The gap lives in the open of the entry bar, bar 12.
+                "open": [100.0] * 12 + [100.0 + gap] + list(close.iloc[13:]),
+                "high": close + 1.0,
+                "low": close - 1.0,
+                "close": close,
+                "volume": 1000.0,
+            },
+            index=index,
+        )
+
+    @staticmethod
+    def _short_signal(df: pd.DataFrame, atr: float) -> pd.DataFrame:
+        """Sell on bar 11, stop 1.5 ATR above, target 1.0 ATR below."""
+        signals = pd.DataFrame(
+            {
+                "direction": 0,
+                "stop_loss": np.nan,
+                "take_profit": np.nan,
+                "stop_distance": np.nan,
+                "target_distance": np.nan,
+                "atr": atr,
+            },
+            index=df.index,
+        )
+        bar = df.index[11]
+        close = df["close"].iloc[11]
+        signals.loc[bar, "direction"] = -1
+        signals.loc[bar, "stop_loss"] = close + 1.5 * atr
+        signals.loc[bar, "take_profit"] = close - 1.0 * atr
+        signals.loc[bar, "stop_distance"] = 1.5 * atr
+        signals.loc[bar, "target_distance"] = 1.0 * atr
+        return signals
+
+    def _run(self, gap: float, atr: float = 4.0):
+        df = self._gap_frame(gap)
+        instrument = get_instrument("XAUUSD")
+        backtester = Backtester(instrument, BacktestConfig(starting_balance=10_000.0))
+        trades, _, _ = backtester.run(df, self._short_signal(df, atr))
+        return trades
+
+    def test_stop_distance_survives_a_gap(self):
+        """The intended risk is a distance, so it must hold after a gap."""
+        atr = 4.0
+        trades = self._run(gap=5.0, atr=atr)
+        assert len(trades) == 1
+
+        trade = trades.iloc[0]
+        distance = abs(trade["entry_price"] - trade["stop_loss"])
+        assert distance == pytest.approx(1.5 * atr, rel=0.02), (
+            "the stop collapsed toward the entry — a gap has rewritten the "
+            "trade's risk, which is the bug this test exists for"
+        )
+
+    def test_reward_to_risk_survives_a_gap(self):
+        atr = 4.0
+        trade = self._run(gap=5.0, atr=atr).iloc[0]
+        risk = abs(trade["entry_price"] - trade["stop_loss"])
+        reward = abs(trade["take_profit"] - trade["entry_price"])
+        assert reward / risk == pytest.approx(1.0 / 1.5, rel=0.05)
+
+    def test_a_gap_does_not_inflate_position_size(self):
+        """The specific mechanism: tiny stop distance, enormous lot size."""
+        no_gap = self._run(gap=0.0).iloc[0]
+        gapped = self._run(gap=5.0).iloc[0]
+        assert gapped["size_lots"] == pytest.approx(no_gap["size_lots"], rel=0.15), (
+            f"a gap changed position size from {no_gap['size_lots']} to "
+            f"{gapped['size_lots']} — risk sizing is being driven by the gap"
+        )
+
+    def test_no_single_trade_can_return_an_absurd_multiple(self):
+        """A 1.5:1 risk structure cannot legitimately pay 30R."""
+        for gap in (0.0, 2.0, 5.0, 9.0):
+            trades = self._run(gap=gap)
+            if trades.empty:
+                continue
+            worst = trades["r_multiple"].abs().max()
+            assert worst < 5.0, (
+                f"a {gap}-point gap produced a {worst:.1f}R trade from a 1:0.67 "
+                "structure — the risk geometry is not being preserved"
+            )
+
+    def test_the_gap_is_recorded_for_inspection(self):
+        """Silent is how this bug survived; the gap is now on every trade."""
+        trade = self._run(gap=5.0, atr=4.0).iloc[0]
+        assert "entry_gap_atr" in trade.index
+        assert trade["entry_gap_atr"] == pytest.approx(5.0 / 4.0, rel=0.05)
+        assert self._run(gap=0.0).iloc[0]["entry_gap_atr"] == pytest.approx(0.0, abs=1e-6)
