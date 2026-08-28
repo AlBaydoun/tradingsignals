@@ -45,17 +45,13 @@ connection. Windows, macOS and Linux all work.
 
 ## Step 1 — Install it
 
-**The code lives on a branch, not on `main`.** Cloning without `-b` gets you a
-repository containing nothing but a README, and every command afterwards fails
-with "No module named signalforge". Copy the command below exactly.
-
 ### Windows
 
 Open **Command Prompt** (press Start, type `cmd`, hit Enter) and run:
 
 ```bat
 cd %USERPROFILE%\Documents
-git clone -b claude/ai-trading-signal-agent-af9nel https://github.com/AlBaydoun/tradingsignals.git
+git clone https://github.com/AlBaydoun/tradingsignals.git
 cd tradingsignals
 ```
 
@@ -88,7 +84,7 @@ is a Mac/Linux command and Windows will tell you it is "not recognized".
 ### Mac / Linux
 
 ```bash
-git clone -b claude/ai-trading-signal-agent-af9nel https://github.com/AlBaydoun/tradingsignals.git
+git clone https://github.com/AlBaydoun/tradingsignals.git
 cd tradingsignals
 
 python3 -m venv .venv
@@ -347,7 +343,7 @@ discovery.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `No module named signalforge` | Cloned `main`, which holds only a README | Re-clone with `-b claude/ai-trading-signal-agent-af9nel` |
+| `No module named signalforge` | Clone is empty, or you are in the wrong folder | `dir` should show `requirements.txt`; if not, re-clone |
 | `No such file: requirements.txt` | Same cause as above | Same fix |
 | `'source' is not recognized` | Mac command on Windows | Use `.venv\Scripts\activate` |
 | `'python' is not recognized` | Python not on PATH | Reinstall, tick "Add python.exe to PATH" |
