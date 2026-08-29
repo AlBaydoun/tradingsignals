@@ -213,9 +213,11 @@ def summarise(rankings: list[Ranking]) -> str:
     tradable = [r for r in rankings if r.tradable]
     if not tradable:
         best = max(rankings, key=lambda r: r.expected_r)
+        n_symbols = len({r.symbol for r in rankings})
         return (
             f"Nothing currently clears the cost hurdle across "
-            f"{len({r.symbol for r in rankings})} instruments. The closest is "
+            f"{n_symbols} {'instrument' if n_symbols == 1 else 'instruments'}. "
+            f"The closest is "
             f"{best.symbol} on {best.timeframe} at {best.expected_r:+.3f}R expected. "
             "Sitting out is the correct trade."
         )

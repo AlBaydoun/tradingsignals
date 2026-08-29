@@ -123,6 +123,17 @@ class Signal:
         out["valid_until"] = self.valid_until.isoformat()
         out["expectancy_r"] = round(self.expectancy_r, 3)
         out["is_actionable"] = self.is_actionable
+        # Consumers need the countdown, and recomputing it from valid_until
+        # means every client reimplements the same clock arithmetic.
+        out["minutes_remaining"] = round(self.minutes_remaining(), 1)
+        # Display precision travels with the trade: a client showing 54024
+        # beside 53753.6 looks broken, and the levels are typed by hand.
+        try:
+            from signalforge.universe import get_instrument
+
+            out["digits"] = get_instrument(self.symbol).digits
+        except KeyError:
+            out["digits"] = 2
         return out
 
 

@@ -611,8 +611,7 @@ def _report_affordability(config: Config, problems: list[str]) -> None:
     reasonable default and a terrible thing to discover by accident.
     """
     from signalforge.data import DataRouter
-    from signalforge.features import indicators as ta
-    from signalforge.risk import minimum_balance_for
+    from signalforge.diagnostics import affordability
 
     balance = config.risk.account_balance
     risk_pct = config.risk.risk_percent_per_trade
@@ -623,49 +622,90 @@ def _report_affordability(config: Config, problems: list[str]) -> None:
         f"and {risk_pct}% risk ({budget:,.2f} per trade):"
     )
 
-    router = DataRouter(config.data)
-    blocked: list[str] = []
-    for symbol in config.watchlist:
-        try:
-            instrument = get_instrument(symbol)
-        except KeyError:
-            continue
-        for timeframe in config.timeframes:
-            df = router.get_bars(symbol, timeframe, 200)
-            if df.empty or len(df) < 20:
-                continue
-            atr = ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1]
-            if not atr or atr != atr:
-                continue
-            needed = minimum_balance_for(
-                instrument,
-                entry_price=float(df["close"].iloc[-1]),
-                stop_distance=config.risk.sl_atr_mult * float(atr),
-                risk_percent=risk_pct,
-                account_currency=config.risk.account_currency,
-            )
-            if needed > balance:
-                blocked.append(
-                    f"  {symbol:10s} {timeframe:4s} needs ~{needed:,.0f} "
-                    f"(smallest lot risks {needed * risk_pct / 100.0:,.2f})"
-                )
-
-    if blocked:
-        for line in blocked:
-            print(line)
-        print(
-            "\n  These will never produce a signal at the current settings — the "
-            "smallest\n  position your broker allows risks more than your budget, "
-            "and sizing rounds\n  down rather than up. Raise the balance, raise "
-            "the risk percentage, or drop\n  them from the watchlist. Do not "
-            "assume the model is at fault."
-        )
-        problems.append(
-            f"{len(blocked)} symbol/timeframe combinations are unaffordable at "
-            f"{balance:,.0f} and {risk_pct}% risk"
-        )
-    else:
+    blocked = [
+        check
+        for check in affordability(config, DataRouter(config.data))
+        if not check.affordable
+    ]
+    if not blocked:
         print("  Every watchlist combination is tradable at the minimum lot.")
+        return
+
+    for check in blocked:
+        print(
+            f"  {check.symbol:10s} {check.timeframe:4s} needs "
+            f"~{check.minimum_balance:,.0f} "
+            f"(smallest lot risks {check.minimum_lot_risk:,.2f})"
+        )
+    print(
+        "\n  These will never produce a signal at the current settings — the "
+        "smallest\n  position your broker allows risks more than your budget, "
+        "and sizing rounds\n  down rather than up. Raise the balance, raise "
+        "the risk percentage, or drop\n  them from the watchlist. Do not "
+        "assume the model is at fault."
+    )
+    problems.append(
+        f"{len(blocked)} symbol/timeframe combinations are unaffordable at "
+        f"{balance:,.0f} and {risk_pct}% risk"
+    )
+
+
+def cmd_dashboard(args, config: Config) -> int:
+    """Serve the web dashboard, readable on a phone on the same network."""
+    try:
+        import uvicorn
+    except ImportError:
+        print("uvicorn is not installed. Run: pip install -r requirements.txt")
+        return 1
+
+    host, port = args.host, args.port
+    shown = "localhost" if host in ("127.0.0.1", "localhost") else host
+
+    print()
+    print("  SignalForge dashboard")
+    print(f"  http://{shown}:{port}/dashboard")
+    if host == "0.0.0.0":
+        addresses = _local_addresses()
+        if addresses:
+            print()
+            print("  On your phone, on the same Wi-Fi, open:")
+            for address in addresses:
+                print(f"    http://{address}:{port}/dashboard")
+        print()
+        print("  NOTE: there is no password on this page. Binding to 0.0.0.0")
+        print("  exposes it to everyone on your network. Use --host 127.0.0.1")
+        print("  if you only want it on this machine.")
+    print()
+    print("  Press Ctrl+C to stop.")
+    print()
+
+    uvicorn.run(
+        "signalforge.api.server:app", host=host, port=port, log_level="warning"
+    )
+    return 0
+
+
+def _local_addresses() -> list[str]:
+    """This machine's LAN addresses, for typing into a phone browser."""
+    import socket
+
+    found: set[str] = set()
+    try:
+        # Connecting a UDP socket sends nothing but selects the interface the
+        # OS would actually route through, which is the address a phone needs.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            found.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = info[4][0]
+            if not address.startswith("127."):
+                found.add(address)
+    except OSError:
+        pass
+    return sorted(found)
 
 
 def cmd_watch(args, config: Config) -> int:
@@ -778,6 +818,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check data, models and configuration")
     doctor.set_defaults(func=cmd_doctor)
+
+    dash = sub.add_parser("dashboard", help="serve the web dashboard")
+    dash.add_argument("--host", default="127.0.0.1",
+                      help="0.0.0.0 to reach it from your phone on the same Wi-Fi")
+    dash.add_argument("--port", type=int, default=8000)
+    dash.set_defaults(func=cmd_dashboard)
 
     watch = sub.add_parser("watch", help="run continuously")
     watch.add_argument("--interval", type=int, default=300)

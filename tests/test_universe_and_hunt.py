@@ -240,14 +240,44 @@ class TestHunt:
         results = hunt(frames, "H1", hour_utc=14)
         assert [r.symbol for r in results] == ["XAUUSD"]
 
-    def test_closed_market_scores_below_an_open_one(self):
+    def test_a_closed_market_scores_zero(self):
+        """A shut exchange is not an opportunity, however good Friday looked.
+
+        Closed markets return their last session's bars, so every volatility
+        and trend measure describes a move that has already finished — and
+        there is no live price to trade at anyway. Ranking one highly on a
+        Saturday is an invitation to a trade that cannot be placed.
+        """
         bars = synthetic_bars(drift=0.3, seed=1)
         open_now = evaluate("US500", bars, "H1", spread_pips=0.5, hour_utc=15)
         weekend = evaluate(
             "US500", bars, "H1", spread_pips=0.5, hour_utc=15, is_weekend=True
         )
-        assert weekend.score < open_now.score
+
+        assert open_now.score > 0.0, "the fixture must score when open"
+        assert weekend.score == 0.0
+        assert not weekend.market_open
         assert weekend.liquidity == 0.0
+        assert "closed" in weekend.verdict
+        assert any("closed" in r for r in weekend.reasons)
+
+    def test_crypto_still_trades_at_the_weekend(self):
+        """The gate is per instrument, not a blanket weekend rule."""
+        bars = synthetic_bars(drift=0.3, seed=1)
+        # BTCUSDT's pip is a whole dollar, so the spread has to be scaled to
+        # the fixture's ~100-point price or the cost gate closes first.
+        result = evaluate(
+            "BTCUSDT", bars, "H1", spread_pips=0.05, hour_utc=15, is_weekend=True
+        )
+        assert result.market_open
+        assert result.score > 0.0
+
+    def test_summary_says_so_when_everything_is_closed(self):
+        frames = {"US500": synthetic_bars(drift=0.3, seed=1)}
+        results = hunt(frames, "H1", hour_utc=15, is_weekend=True, spreads=CHEAP)
+        text = describe(results)
+        assert "closed" in text
+        assert "reopen" in text
 
     def test_model_presence_is_reported_not_scored(self):
         """Having a model must not flatter an instrument's ranking — the hunt

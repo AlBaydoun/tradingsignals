@@ -238,9 +238,11 @@ def market_summary(
     trending = trend_counts.get("trending", 0)
     total = len(regimes)
 
+    noun = "instrument" if total == 1 else "instruments"
+    verb = "is" if trending == 1 else "are"
     lines = [
-        f"Across {total} instruments, volatility is predominantly {dominant_vol} "
-        f"and {trending} of {total} are trending."
+        f"Across {total} {noun}, volatility is predominantly {dominant_vol} "
+        f"and {trending} of {total} {verb} trending."
     ]
 
     if tradable_count == 0:

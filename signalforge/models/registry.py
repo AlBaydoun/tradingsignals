@@ -24,6 +24,12 @@ class ModelEntry:
     directional_accuracy: float
     n_samples: int
     enabled: bool = True
+    # Overlap-adjusted sample size and the Wilson interval computed at training
+    # time. Zero/None means an older index that predates these fields.
+    effective_samples: int = 0
+    accuracy_ci_low: float = 0.0
+    accuracy_ci_high: float = 1.0
+    edge_is_significant: bool = False
 
     @property
     def key(self) -> str:
@@ -97,6 +103,16 @@ class ModelRegistry:
             "directional_accuracy": report.directional_accuracy if report else 0.0,
             "coverage": report.coverage if report else 0.0,
             "n_samples": report.n_samples if report else 0,
+            # The raw sample count overstates the evidence badly, because
+            # triple-barrier labels overlap: 10,000 rows with a six-bar mean
+            # span is closer to 1,600 independent observations. Anything that
+            # draws a confidence interval must use the effective count and the
+            # interval the engine actually computed, or it will claim
+            # significance the engine itself denies.
+            "effective_samples": report.effective_sample_size if report else 0,
+            "accuracy_ci_low": report.accuracy_ci_low if report else 0.0,
+            "accuracy_ci_high": report.accuracy_ci_high if report else 1.0,
+            "edge_is_significant": report.edge_is_significant if report else False,
             "brier_score": report.brier_score if report else 1.0,
             "warnings": report.warnings if report else [],
             "enabled": self._index.get(key, {}).get("enabled", True),
@@ -138,7 +154,47 @@ class ModelRegistry:
             model.report = ModelReport(**report_dict, reliability=buckets)
         return model
 
+    def _backfill_intervals(self) -> None:
+        """Repair index entries written before the interval fields existed.
+
+        The numbers were never lost — every saved model carries its full
+        report — but an index missing them would leave a client with the raw
+        sample count and no interval, which is exactly the material for an
+        overconfident error bar. Runs once and persists; models whose file has
+        gone are left alone rather than dropped here.
+        """
+        stale = [
+            key for key, entry in self._index.items()
+            if "effective_samples" not in entry
+        ]
+        if not stale:
+            return
+
+        repaired = 0
+        for key in stale:
+            entry = self._index[key]
+            try:
+                payload = joblib.load(Path(entry["path"]))
+                report = payload.get("report") or {}
+            except Exception as exc:
+                log.debug("Could not backfill %s: %s", key, exc)
+                report = {}
+
+            entry["effective_samples"] = report.get("effective_sample_size", 0)
+            entry["accuracy_ci_low"] = report.get("accuracy_ci_low", 0.0)
+            entry["accuracy_ci_high"] = report.get("accuracy_ci_high", 1.0)
+            accuracy = report.get("directional_accuracy", 0.0)
+            entry["edge_is_significant"] = bool(
+                report.get("accuracy_ci_low", 0.0) > 0.5 and accuracy > 0.5
+            )
+            repaired += 1
+
+        if repaired:
+            log.info("Backfilled confidence intervals for %d model(s)", repaired)
+            self._save_index()
+
     def list_models(self) -> list[ModelEntry]:
+        self._backfill_intervals()
         return [
             ModelEntry(
                 symbol=e["symbol"],
@@ -148,6 +204,10 @@ class ModelRegistry:
                 directional_accuracy=e.get("directional_accuracy", 0.0),
                 n_samples=e.get("n_samples", 0),
                 enabled=e.get("enabled", True),
+                effective_samples=e.get("effective_samples", 0),
+                accuracy_ci_low=e.get("accuracy_ci_low", 0.0),
+                accuracy_ci_high=e.get("accuracy_ci_high", 1.0),
+                edge_is_significant=e.get("edge_is_significant", False),
             )
             for e in self._index.values()
         ]

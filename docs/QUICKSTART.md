@@ -68,6 +68,7 @@ After that you have five clickable files:
 | `train.bat` | Fit the models (~30 min, weekly) |
 | `signals.bat` | Get signals right now |
 | `watch.bat` | Run continuously until you close the window |
+| `dashboard.bat` | Open the visual dashboard, and serve it to your phone |
 
 If you prefer to type it yourself, the Windows commands are:
 
@@ -298,23 +299,49 @@ pip install -r requirements.txt
 
 ---
 
-## Step 7 — Read it on your phone
+## Step 7 — The dashboard
 
-The engine ships a small web dashboard:
+**Windows: double-click `dashboard.bat`.** Your browser opens at the dashboard,
+and the terminal prints the addresses to type into your phone.
 
 ```bash
-uvicorn signalforge.api.server:app --host 0.0.0.0 --port 8000
+# Mac / Linux, or if you prefer typing
+python -m signalforge.cli dashboard --host 0.0.0.0
 ```
 
-Then open `http://<the machine's IP>:8000/dashboard` on your phone. On a home
-network that is your laptop's local IP; on a VPS it is the server's address.
+Five tabs:
 
-**There is no password on it.** On a VPS, either bind it to `127.0.0.1` and
-reach it through an SSH tunnel, or put it behind a proxy with authentication.
-Do not leave it open to the internet.
+| Tab | What it is for |
+|---|---|
+| **Signals** | The trades. Every value is tap-to-copy for MetaTrader |
+| **Hunt** | Which markets are moving enough to be worth their cost |
+| **Models** | Accuracy with error bars — read the bar, not the number |
+| **Journal** | What the models promised against what actually happened |
+| **Setup** | Your MT5 symbol names and what your account can afford |
 
-Simplest alternative if you would rather not run a server: just run
-`python -m signalforge.cli signals --compact` and read the terminal.
+The Signals tab is built for the job you actually do: read a number, type it
+into MT5, don't mistype it. **Tap any row and it copies.** Mistyping a stop is
+how a 0.5% risk becomes 5%.
+
+### Reading it on your phone
+
+Both machines on the same Wi-Fi. The terminal prints something like:
+
+```
+On your phone, on the same Wi-Fi, open:
+  http://192.168.1.42:8000/dashboard
+```
+
+Type that into your phone's browser. Add it to your home screen and it behaves
+like an app.
+
+**There is no password on this page.** `--host 0.0.0.0` exposes it to everyone
+on your network, which is fine at home and not fine on public Wi-Fi. On a VPS,
+bind to `127.0.0.1` and reach it through an SSH tunnel, or put it behind a
+proxy that asks for a login. Never expose it to the open internet.
+
+Prefer not to run a server at all? `signals.bat` prints the same trades as
+text.
 
 ---
 

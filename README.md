@@ -157,6 +157,7 @@ change you can make.
 | `learn` | Resolve open signals, police failing models (`--retrain`) |
 | `journal` | Live results versus what the models promised |
 | `watch` | Run continuously (`--interval 300`) |
+| `dashboard` | Serve the web dashboard (`--host 0.0.0.0` to reach it from a phone) |
 
 ### Finding what is worth trading
 
@@ -185,15 +186,35 @@ compared cross-sectionally.
 worth studying, not that it is predictable. `train` and `backtest` answer that,
 and usually the answer is no.
 
-An HTTP API is included for feeding phones and bots:
+### The dashboard
 
 ```bash
-uvicorn signalforge.api.server:app --host 127.0.0.1 --port 8000
-# /signals  /signals/text  /rankings  /scan  /journal  /models  /dashboard
+python -m signalforge.cli dashboard --host 0.0.0.0    # Windows: dashboard.bat
 ```
 
-`/dashboard` is a self-contained mobile-readable page. There is no
-authentication — bind it to localhost or put it behind a proxy.
+A single self-contained page — no build step, no CDN, no external requests —
+with five tabs: **Signals**, **Hunt**, **Models**, **Journal** and **Setup**.
+It prints your machine's LAN addresses so you can open it on a phone on the
+same Wi-Fi.
+
+Two things it does deliberately:
+
+- **Every value on a signal is tap-to-copy.** The levels get typed into MT5 by
+  hand, and mistyping a stop is how 0.5% risk becomes 5%.
+- **The Models tab draws the confidence interval the engine computed**, on the
+  overlap-adjusted sample — not one derived from the raw row count. BTCUSDT H1
+  has 10,164 rows but ~1,269 independent observations; the naive interval calls
+  it significant and the honest one does not. A dashboard that renders a coin
+  flip as a discovery is a lie told with CSS.
+
+The underlying HTTP API is open too:
+
+```
+/signals  /signals/text  /rankings  /scan  /journal  /models
+/api/hunt  /api/setup  /calendar  /dashboard
+```
+
+There is no authentication — bind it to localhost or put it behind a proxy.
 
 ---
 

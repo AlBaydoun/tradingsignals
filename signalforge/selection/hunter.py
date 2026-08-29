@@ -61,6 +61,7 @@ class HuntResult:
     displacement_atr: float  # signed 20-bar move in ATR units
     change_pct: float  # 20-bar percentage move
     liquidity: float
+    market_open: bool  # false on a weekend for anything that does not trade then
     has_model: bool
     tradable_cost: bool
     verdict: str
@@ -158,8 +159,14 @@ def evaluate(
         reasons.append(f"movement is choppy (efficiency {er:.2f}) — range, not trend")
 
     liquidity = liquidity_score(inst.market, hour_utc, inst.trades_weekends, is_weekend)
-    if liquidity < 0.4:
-        reasons.append("closed or illiquid at this hour — spreads will be worse")
+    # A closed market is not an opportunity, however well its last session
+    # looks. Its bars are Friday's, so "expanding volatility" describes a move
+    # that already finished, and there is no live price to trade at.
+    market_open = liquidity > 0.0
+    if not market_open:
+        reasons.append("market is closed — these bars are from the last session")
+    elif liquidity < 0.4:
+        reasons.append("thin liquidity at this hour — spreads will be worse")
 
     # --- combine ----------------------------------------------------------
     heat = 0.5 * (percentile / 100.0) + 0.5 * float(
@@ -169,7 +176,11 @@ def evaluate(
         np.clip(abs(displacement) / 3.0, 0.0, 1.0)
     )
     blend = 0.40 * heat + 0.35 * direction + 0.25 * liquidity
+    # Cost and being open are gates, not contributions: neither a prohibitive
+    # spread nor a shut exchange can be offset by excitement elsewhere.
     score = float(np.clip(100.0 * cost_factor * blend, 0.0, 100.0))
+    if not market_open:
+        score = 0.0
 
     if expansion > 1.4:
         reasons.append(f"volatility is {expansion:.1f}x its own median — expanding")
@@ -195,14 +206,19 @@ def evaluate(
         displacement_atr=round(displacement, 2),
         change_pct=round(change_pct, 2),
         liquidity=round(liquidity, 2),
+        market_open=market_open,
         has_model=has_model,
         tradable_cost=ratio >= MIN_COST_RATIO,
-        verdict=_verdict(score, ratio, expansion, er),
+        verdict=_verdict(score, ratio, expansion, er, market_open),
         reasons=reasons,
     )
 
 
-def _verdict(score: float, ratio: float, expansion: float, er: float) -> str:
+def _verdict(
+    score: float, ratio: float, expansion: float, er: float, market_open: bool = True
+) -> str:
+    if not market_open:
+        return "closed right now — nothing to trade"
     if ratio < MIN_COST_RATIO:
         return "costs dominate — skip"
     if score >= 55.0 and expansion > 1.2 and er >= 0.3:
@@ -264,8 +280,17 @@ def describe(results: list[HuntResult]) -> str:
     if not results:
         return "No instruments could be surveyed — check data availability."
 
-    affordable = [r for r in results if r.tradable_cost]
-    if not affordable:
+    tradable = [r for r in results if r.tradable_cost and r.market_open]
+    closed = [r for r in results if not r.market_open]
+
+    if not tradable and closed:
+        return (
+            f"{len(closed)} of {len(results)} instruments are closed right now, "
+            "and none of the rest clears its own costs. Closed markets show "
+            "their last session's bars, so nothing here is tradable until they "
+            "reopen."
+        )
+    if not tradable:
         return (
             f"All {len(results)} instruments surveyed are currently priced out: "
             "their typical move does not clear their own spread on this "
@@ -273,12 +298,14 @@ def describe(results: list[HuntResult]) -> str:
             "the spread is unchanged."
         )
 
-    hot = [r for r in affordable if r.vol_expansion > 1.2]
-    best = results[0]
+    hot = [r for r in tradable if r.vol_expansion > 1.2]
+    best = tradable[0]
     parts = [
-        f"{len(affordable)} of {len(results)} instruments clear their own costs "
-        f"on {best.timeframe}.",
+        f"{len(tradable)} of {len(results)} instruments are open and clear "
+        f"their own costs on {best.timeframe}.",
     ]
+    if closed:
+        parts.append(f"{len(closed)} are closed and scored zero.")
     if hot:
         names = ", ".join(r.symbol for r in hot[:4])
         parts.append(f"{len(hot)} are in expanding volatility ({names}).")

@@ -14,6 +14,7 @@ behind a reverse proxy, or bind it to localhost and reach it over a VPN.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from datetime import datetime, timezone
 from threading import Lock
 
@@ -177,6 +178,12 @@ def models() -> dict:
                 "timeframe": m.timeframe,
                 "accuracy": m.directional_accuracy,
                 "samples": m.n_samples,
+                # The count and interval that account for label overlap. A
+                # client drawing error bars must use these, never n_samples.
+                "effective_samples": m.effective_samples,
+                "accuracy_ci_low": m.accuracy_ci_low,
+                "accuracy_ci_high": m.accuracy_ci_high,
+                "significant": m.edge_is_significant,
                 "trained_at": m.trained_at,
                 "age_hours": round(m.age_hours(), 1),
                 "enabled": m.enabled,
@@ -198,76 +205,79 @@ def calendar(hours: float = Query(48.0, ge=1, le=168)) -> dict:
     }
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard() -> str:
-    """A minimal self-contained dashboard, readable on a phone."""
-    bundle = _cached_bundle()
-    rows = []
+@app.get("/api/setup")
+def setup() -> dict:
+    """Symbol names and affordability — the two things to check before trading.
 
-    for signal in bundle.actionable:
-        accuracy = (
-            f"{signal.measured_accuracy:.0%}"
-            if signal.measured_accuracy is not None
-            else "unproven"
-        )
-        colour = "#2e7d32" if signal.direction.value == "BUY" else "#c62828"
-        targets = " / ".join(str(t) for t in signal.take_profits)
-        rows.append(
-            f"""
-            <div class="card">
-              <div class="head" style="color:{colour}">
-                {signal.direction.value} {signal.mt5_symbol}
-                <span class="tf">{signal.timeframe}</span>
-              </div>
-              <table>
-                <tr><td>Entry</td><td>{signal.entry}</td></tr>
-                <tr><td>Stop loss</td><td>{signal.stop_loss}
-                    ({signal.stop_distance_pips:.0f} pips)</td></tr>
-                <tr><td>Targets</td><td>{targets}</td></tr>
-                <tr><td>Lots</td><td>{signal.lots}</td></tr>
-                <tr><td>Risk</td><td>{signal.risk_percent:.2f}%</td></tr>
-                <tr><td>R:R</td><td>1:{signal.reward_risk:.1f}</td></tr>
-                <tr><td>Measured accuracy</td><td>{accuracy}</td></tr>
-              </table>
-              <p class="why">{signal.reasoning}</p>
-            </div>"""
-        )
+    Slow (it prices every watchlist combination), so it is not on the signal
+    path. The dashboard loads it on demand.
+    """
+    from signalforge.diagnostics import affordability, symbol_mappings
 
-    body = "".join(rows) or (
-        '<p class="empty">No signals clear the quality bar right now. '
-        "Not trading is a position.</p>"
+    engine = get_engine()
+    checks = affordability(_config, engine.router)
+    return {
+        "account_balance": _config.risk.account_balance,
+        "account_currency": _config.risk.account_currency,
+        "risk_percent": _config.risk.risk_percent_per_trade,
+        "risk_budget": round(
+            _config.risk.account_balance
+            * _config.risk.risk_percent_per_trade
+            / 100.0,
+            2,
+        ),
+        "mt5_symbol_suffix": _config.mt5_symbol_suffix,
+        "timeframes": _config.timeframes,
+        "mappings": [m.to_dict() for m in symbol_mappings(_config)],
+        "affordability": [a.to_dict() for a in checks],
+        "unaffordable": [a.to_dict() for a in checks if not a.affordable],
+    }
+
+
+@app.get("/api/hunt")
+def api_hunt(
+    timeframe: str = Query("H1"),
+    limit: int = Query(25, ge=1, le=60),
+    markets: str | None = Query(None, description="comma-separated filter"),
+) -> dict:
+    """Rank the whole universe by movement per unit of trading cost."""
+    from signalforge.models import ModelRegistry
+    from signalforge.selection import default_universe, describe, hunt
+
+    engine = get_engine()
+    wanted = [m.strip() for m in markets.split(",")] if markets else None
+    symbols = sorted(set(_config.watchlist) | set(default_universe(wanted)))
+
+    now = datetime.now(timezone.utc)
+    frames = engine.router.get_many(symbols, timeframe, 500)
+    trained = {e.symbol for e in ModelRegistry(_config.model.model_dir).list_models()}
+
+    results = hunt(
+        frames,
+        timeframe,
+        hour_utc=now.hour,
+        is_weekend=now.weekday() >= 5,
+        models=trained,
+        limit=limit,
     )
+    return {
+        "timeframe": timeframe,
+        "generated_at": now.isoformat(),
+        "summary": describe(results),
+        "results": [r.to_dict() for r in results],
+    }
 
-    return f"""<!doctype html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SignalForge</title>
-<style>
-  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0;
-         background: #101418; color: #e6e9ec; padding: 16px; }}
-  h1 {{ font-size: 18px; margin: 0 0 4px; }}
-  .meta {{ color: #8b949e; font-size: 13px; margin-bottom: 16px; }}
-  .card {{ background: #1a1f26; border-radius: 10px; padding: 14px;
-           margin-bottom: 12px; }}
-  .head {{ font-weight: 600; font-size: 17px; margin-bottom: 8px; }}
-  .tf {{ background: #2a313a; color: #8b949e; font-size: 12px;
-         padding: 2px 6px; border-radius: 4px; margin-left: 6px; }}
-  table {{ width: 100%; font-size: 14px; border-collapse: collapse; }}
-  td {{ padding: 3px 0; }}
-  td:first-child {{ color: #8b949e; }}
-  td:last-child {{ text-align: right; font-variant-numeric: tabular-nums; }}
-  .why {{ font-size: 13px; color: #b6bec7; margin: 10px 0 0;
-          line-height: 1.45; }}
-  .empty {{ color: #8b949e; }}
-  .foot {{ color: #6e7681; font-size: 12px; margin-top: 20px;
-           line-height: 1.5; }}
-</style></head>
-<body>
-  <h1>SignalForge</h1>
-  <div class="meta">{bundle.generated_at.strftime('%Y-%m-%d %H:%M UTC')} —
-    {len(bundle.actionable)} signals, {len(bundle.watchlist)} on watch</div>
-  {body}
-  <div class="foot">Accuracy figures are measured on past out-of-sample data
-  and carry no guarantee. Risk only what you can afford to lose.</div>
-</body></html>"""
+
+@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/ui", response_class=HTMLResponse)
+def dashboard() -> HTMLResponse:
+    """The dashboard: one self-contained page, no build step, no CDN.
+
+    Served as a static file rather than assembled here, so the markup can be
+    edited without restarting a mental model of Python string escaping.
+    """
+    page = Path(__file__).parent / "static" / "index.html"
+    try:
+        return HTMLResponse(page.read_text(encoding="utf-8"))
+    except OSError:
+        raise HTTPException(500, f"Dashboard file missing at {page}") from None

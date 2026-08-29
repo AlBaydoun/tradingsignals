@@ -1,0 +1,1085 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0C1016">
+<title>SignalForge</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230C1016'/%3E%3Cpath d='M6 21l5-6 4 4 5-9 6 8' stroke='%235B9DFF' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+/* ==========================================================================
+   Tokens. Dark is the default because this is read next to a trading
+   platform, but the light set is complete rather than an afterthought.
+   Colour is semantic and never decorative:
+     accent   — measured, verified out-of-sample
+     warn     — asserted but unproven
+     danger   — fails its own test
+     buy/sell — trade direction only, used nowhere else
+   ========================================================================== */
+:root {
+  --bg: #0C1016;
+  --surface: #141A22;
+  --surface-2: #1B222C;
+  --surface-3: #232B37;
+  --ink: #E8ECF2;
+  --ink-2: #A3AEBD;
+  --ink-3: #6D7889;
+  --rule: #232B37;
+  --rule-2: #313B4A;
+
+  --accent: #5B9DFF;
+  --accent-dim: #1B2C4A;
+  --warn: #E0A63F;
+  --warn-dim: #38290F;
+  --danger: #FF7A6E;
+  --danger-dim: #3A1B18;
+  --buy: #4ADE80;
+  --buy-dim: #14301F;
+  --sell: #FF7A6E;
+  --sell-dim: #3A1B18;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 12px 32px -12px rgba(0,0,0,.55);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", Menlo,
+          Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* Light tokens apply in two situations: the viewer's system asks for light
+   and they have not overridden it, or they explicitly chose light. Defining
+   them only under [data-theme] would leave a light-mode system on the dark
+   palette until the toggle was found. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+  --bg: #F4F6F9;
+  --surface: #FFFFFF;
+  --surface-2: #EFF2F6;
+  --surface-3: #E3E8EF;
+  --ink: #0F1722;
+  --ink-2: #4A5568;
+  --ink-3: #7B8698;
+  --rule: #DFE4EB;
+  --rule-2: #C8D0DA;
+
+  --accent: #1257C7;
+  --accent-dim: #E2ECFB;
+  --warn: #9A6410;
+  --warn-dim: #FAF0DC;
+  --danger: #B3261E;
+  --danger-dim: #FBE8E6;
+  --buy: #157F3B;
+  --buy-dim: #E3F5E9;
+  --sell: #B3261E;
+  --sell-dim: #FBE8E6;
+  --shadow: 0 1px 2px rgba(15,23,34,.06), 0 12px 28px -14px rgba(15,23,34,.18);
+}
+}
+
+:root[data-theme="light"] {
+  --bg: #F4F6F9;
+  --surface: #FFFFFF;
+  --surface-2: #EFF2F6;
+  --surface-3: #E3E8EF;
+  --ink: #0F1722;
+  --ink-2: #4A5568;
+  --ink-3: #7B8698;
+  --rule: #DFE4EB;
+  --rule-2: #C8D0DA;
+
+  --accent: #1257C7;
+  --accent-dim: #E2ECFB;
+  --warn: #9A6410;
+  --warn-dim: #FAF0DC;
+  --danger: #B3261E;
+  --danger-dim: #FBE8E6;
+  --buy: #157F3B;
+  --buy-dim: #E3F5E9;
+  --sell: #B3261E;
+  --sell-dim: #FBE8E6;
+  --shadow: 0 1px 2px rgba(15,23,34,.06), 0 12px 28px -14px rgba(15,23,34,.18);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: calc(24px + var(--safe-b));
+}
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---- Header ------------------------------------------------------------ */
+
+header {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(150%) blur(14px);
+  -webkit-backdrop-filter: saturate(150%) blur(14px);
+  border-bottom: 1px solid var(--rule);
+}
+.bar {
+  max-width: 860px; margin: 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px 12px;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; margin-right: auto; min-width: 0; }
+.brand b { font-size: 17px; letter-spacing: -.02em; font-weight: 650; }
+.brand .ver { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+
+.pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink-3); flex: none;
+  transition: background .3s;
+}
+.pulse.live { background: var(--buy); box-shadow: 0 0 0 4px var(--buy-dim); }
+.pulse.busy { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-dim);
+              animation: breathe 1.1s ease-in-out infinite; }
+.pulse.dead { background: var(--danger); box-shadow: 0 0 0 4px var(--danger-dim); }
+@keyframes breathe { 50% { opacity: .35; } }
+
+.iconbtn {
+  appearance: none; border: 1px solid var(--rule-2); background: var(--surface);
+  color: var(--ink-2); width: 34px; height: 34px; border-radius: 9px;
+  display: grid; place-items: center; cursor: pointer; flex: none;
+  font-size: 15px; transition: background .15s, color .15s, border-color .15s;
+}
+.iconbtn:hover { background: var(--surface-2); color: var(--ink); }
+.iconbtn:active { transform: scale(.94); }
+.iconbtn.spin svg { animation: rot .8s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ---- Tabs -------------------------------------------------------------- */
+
+nav {
+  max-width: 860px; margin: 0 auto;
+  display: flex; gap: 2px; padding: 0 10px;
+  overflow-x: auto; scrollbar-width: none;
+}
+nav::-webkit-scrollbar { display: none; }
+nav button {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 13.5px; font-weight: 500;
+  color: var(--ink-3); padding: 10px 12px 12px; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+}
+nav button:hover { color: var(--ink-2); }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav .count {
+  font-family: var(--mono); font-size: 11px; margin-left: 5px;
+  background: var(--surface-3); color: var(--ink-2);
+  padding: 1px 5px; border-radius: 20px;
+}
+nav button[aria-selected="true"] .count { background: var(--accent); color: #fff; }
+
+/* ---- Layout ------------------------------------------------------------ */
+
+main { max-width: 860px; margin: 0 auto; padding: 18px 16px 0; }
+.panel[hidden] { display: none; }
+.stamp {
+  font-size: 12px; color: var(--ink-3); font-family: var(--mono);
+  margin: 0 0 16px;
+}
+
+/* ---- Cards ------------------------------------------------------------- */
+
+.card {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  margin-bottom: 14px; overflow: hidden;
+}
+.card-top {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--rule);
+}
+.side {
+  font-weight: 700; font-size: 12px; letter-spacing: .07em;
+  padding: 4px 9px; border-radius: 6px; flex: none;
+}
+.side.buy { background: var(--buy-dim); color: var(--buy); }
+.side.sell { background: var(--sell-dim); color: var(--sell); }
+.sym { font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.chip {
+  font-size: 11px; font-family: var(--mono); color: var(--ink-2);
+  background: var(--surface-3); padding: 2px 7px; border-radius: 5px; flex: none;
+}
+.grade { margin-left: auto; font-size: 11px; letter-spacing: .06em; font-weight: 600; }
+.grade.strong { color: var(--buy); }
+.grade.moderate { color: var(--accent); }
+.grade.weak { color: var(--warn); }
+
+/* ---- The ticket: every value is tap-to-copy ---------------------------- */
+
+.ticket { padding: 4px 8px 8px; }
+.line {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 8px; border: 0; background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  border-radius: var(--radius-sm); position: relative;
+  transition: background .12s;
+}
+.line:hover { background: var(--surface-2); }
+.line:active { background: var(--surface-3); }
+.line + .line { box-shadow: 0 -1px 0 var(--rule); }
+.line .k { font-size: 13px; color: var(--ink-2); flex: none; min-width: 84px; }
+.line .v { font-family: var(--mono); font-size: 16px; font-weight: 600; margin-left: auto; }
+.line .sub { font-family: var(--mono); font-size: 11px; color: var(--ink-3); flex: none; }
+.line .cp { opacity: 0; color: var(--ink-3); flex: none; transition: opacity .15s; }
+.line:hover .cp { opacity: 1; }
+.line.copied { background: var(--accent-dim); }
+.line.copied .cp { opacity: 1; color: var(--accent); }
+.line.sl .v { color: var(--danger); }
+.line.tp .v { color: var(--buy); }
+
+.hint {
+  font-size: 11.5px; color: var(--ink-3); padding: 2px 16px 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* ---- Evidence block ---------------------------------------------------- */
+
+.evidence { border-top: 1px solid var(--rule); padding: 13px 16px; }
+.stat-row { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+.stat .lab {
+  font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 2px;
+}
+.stat .val { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+.stat .val.measured { color: var(--accent); }
+.stat .val.unproven { color: var(--warn); font-size: 13px; }
+
+details summary {
+  cursor: pointer; font-size: 13px; color: var(--ink-2);
+  list-style: none; display: flex; align-items: center; gap: 6px;
+  padding: 4px 0;
+}
+details summary::-webkit-details-marker { display: none; }
+details summary::before {
+  content: "›"; display: inline-block; transition: transform .2s;
+  font-size: 15px; color: var(--ink-3);
+}
+details[open] summary::before { transform: rotate(90deg); }
+details p { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; line-height: 1.55; }
+
+.warn-item {
+  display: flex; gap: 8px; font-size: 12.5px; color: var(--warn);
+  background: var(--warn-dim); border-radius: var(--radius-sm);
+  padding: 9px 11px; margin-top: 9px; line-height: 1.45;
+}
+
+/* ---- Confidence-interval bar (the honest centrepiece) ------------------ */
+
+.ci { position: relative; height: 22px; margin: 5px 0; }
+.ci .rail {
+  position: absolute; inset: 9px 0 auto; height: 4px;
+  background: var(--surface-3); border-radius: 2px;
+}
+.ci .flip {
+  position: absolute; top: 2px; bottom: 2px; width: 1px;
+  background: var(--ink-3);
+}
+.ci .band { position: absolute; top: 9px; height: 4px; border-radius: 2px; }
+.ci .dot {
+  position: absolute; top: 5px; width: 12px; height: 12px; border-radius: 50%;
+  margin-left: -6px; border: 2px solid var(--surface);
+}
+.ci.sig .band { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.ci.sig .dot { background: var(--accent); }
+.ci.ns .band { background: color-mix(in srgb, var(--warn) 40%, transparent); }
+.ci.ns .dot { background: var(--warn); }
+.scale {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+  padding: 10px 16px 8px; border-bottom: 1px solid var(--rule);
+  background: var(--surface-2);
+}
+.scale span:nth-child(2) { color: var(--ink-2); }
+
+/* ---- Rows (models, hunt) ----------------------------------------------- */
+
+.row {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--rule);
+}
+.row:last-child { border-bottom: 0; }
+.row .name { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.row .name .tf { color: var(--ink-3); font-weight: 400; margin-left: 5px; }
+.row .right { text-align: right; font-family: var(--mono); font-size: 14px; }
+.row .meta { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-3); }
+.row .full { grid-column: 1 / -1; }
+.tag {
+  font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 6px;
+}
+.tag.ok { background: var(--accent-dim); color: var(--accent); }
+.tag.no { background: var(--warn-dim); color: var(--warn); }
+.tag.bad { background: var(--danger-dim); color: var(--danger); }
+
+/* ---- Score meter (hunt) ------------------------------------------------ */
+
+.meter { height: 5px; background: var(--surface-3); border-radius: 3px; overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.meter i.hot { background: var(--buy); }
+.meter i.cold { background: var(--ink-3); }
+.row.shut { opacity: .55; }
+.row.shut .name { color: var(--ink-2); }
+
+/* ---- Empty / message states ------------------------------------------- */
+
+.empty {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--radius); padding: 34px 24px; text-align: center;
+}
+.empty .mark { font-size: 30px; margin-bottom: 12px; opacity: .85; }
+.empty h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.empty p { margin: 0 auto; max-width: 42ch; color: var(--ink-2); font-size: 13.5px; }
+.empty .aside {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule);
+  font-size: 12.5px; color: var(--ink-3);
+}
+
+.note {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+  font-size: 13px; color: var(--ink-2); line-height: 1.55; margin-bottom: 14px;
+}
+.note.alarm { border-left-color: var(--warn); }
+.note b { color: var(--ink); font-weight: 600; }
+.note code {
+  font-family: var(--mono); font-size: 12px; background: var(--surface-3);
+  padding: 1px 5px; border-radius: 4px;
+}
+
+.skeleton { height: 92px; border-radius: var(--radius); background: var(--surface);
+            border: 1px solid var(--rule); margin-bottom: 14px;
+            animation: fade 1.3s ease-in-out infinite; }
+@keyframes fade { 50% { opacity: .45; } }
+
+/* ---- Section heading --------------------------------------------------- */
+
+.h {
+  font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-3); margin: 22px 0 9px; font-weight: 600;
+}
+.h:first-child { margin-top: 0; }
+
+.scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.grid th {
+  text-align: left; font-size: 10.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-3); font-weight: 600;
+  padding: 9px 12px; border-bottom: 1px solid var(--rule-2); white-space: nowrap;
+}
+table.grid td {
+  padding: 10px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+}
+table.grid tr:last-child td { border-bottom: 0; }
+table.grid td.n { font-family: var(--mono); text-align: right; }
+
+footer {
+  max-width: 860px; margin: 30px auto 0; padding: 18px 16px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 11.5px; color: var(--ink-3); line-height: 1.6;
+}
+
+/* ---- Copy toast -------------------------------------------------------- */
+
+#toast {
+  position: fixed; left: 50%; bottom: calc(22px + var(--safe-b));
+  transform: translate(-50%, 14px);
+  background: var(--ink); color: var(--bg);
+  font-size: 13px; font-weight: 550;
+  padding: 9px 16px; border-radius: 40px;
+  opacity: 0; pointer-events: none; transition: all .2s ease; z-index: 50;
+  box-shadow: var(--shadow);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <span class="pulse busy" id="pulse" title="status"></span>
+    <span class="brand"><b>SignalForge</b><span class="ver" id="ver"></span></span>
+    <button class="iconbtn" id="theme" title="Light / dark" aria-label="Toggle theme">◐</button>
+    <button class="iconbtn" id="refresh" title="Refresh" aria-label="Refresh">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round">
+        <path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>
+      </svg>
+    </button>
+  </div>
+  <nav id="tabs" role="tablist"></nav>
+</header>
+
+<main>
+  <div class="panel" id="p-signals"></div>
+  <div class="panel" id="p-hunt" hidden></div>
+  <div class="panel" id="p-models" hidden></div>
+  <div class="panel" id="p-journal" hidden></div>
+  <div class="panel" id="p-setup" hidden></div>
+</main>
+
+<footer>
+  Accuracy figures are measured on past out-of-sample data and carry no
+  guarantee about future results. This software is advisory: it places no
+  trades. Trading leveraged instruments carries substantial risk of loss —
+  never risk more than you can afford to lose entirely.
+</footer>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ---------------------------------------------------------------------------
+   State
+   --------------------------------------------------------------------------- */
+
+const TABS = [
+  { id: "signals", label: "Signals" },
+  { id: "hunt",    label: "Hunt" },
+  { id: "models",  label: "Models" },
+  { id: "journal", label: "Journal" },
+  { id: "setup",   label: "Setup" },
+];
+
+const cache = {};          // tab id -> last payload
+const loaded = new Set();  // tabs already fetched once
+let active = "signals";
+let inflight = 0;
+
+/* ---------------------------------------------------------------------------
+   Utilities
+   --------------------------------------------------------------------------- */
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function pulse(state) { $("#pulse").className = "pulse " + state; }
+
+function busy(on) {
+  inflight += on ? 1 : -1;
+  const spinning = inflight > 0;
+  $("#refresh").classList.toggle("spin", spinning);
+  if (spinning) pulse("busy");
+}
+
+async function api(path) {
+  busy(true);
+  try {
+    const res = await fetch(path, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    pulse("live");
+    return data;
+  } catch (err) {
+    pulse("dead");
+    throw err;
+  } finally {
+    busy(false);
+  }
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1400);
+}
+
+/* Copying is the whole point of this dashboard: the numbers get typed into
+   MetaTrader by hand, and mistyping a stop is how a 0.5% risk becomes 5%. */
+async function copy(text, el) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard API needs a secure context; fall back to a hidden textarea.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch { /* nothing left to try */ }
+    ta.remove();
+  }
+  toast(`Copied  ${text}`);
+  if (el) {
+    el.classList.add("copied");
+    setTimeout(() => el.classList.remove("copied"), 620);
+  }
+}
+
+const pct = (v, d = 0) => (v === null || v === undefined) ? "—" : (v * 100).toFixed(d) + "%";
+const fixed = (v, d = 2) => (v === null || v === undefined) ? "—" : Number(v).toFixed(d);
+
+/* A price column where 53753.6 sits beside 54024 reads as a data fault, so
+   every level is shown at the instrument's own precision. JSON drops the
+   trailing zero; `digits` puts it back. */
+const price = (v, digits) => (v === null || v === undefined) ? "—"
+  : Number(v).toFixed(digits ?? 2);
+
+/* Three significant figures, trailing zeros stripped — so a 0.25 spread and a
+   30.0 spread sit in the same column without one of them looking like noise. */
+const sig3 = (v) => (v === null || v === undefined) ? "—"
+  : Number(Number(v).toPrecision(3)).toString();
+
+function ago(iso) {
+  if (!iso) return "";
+  const secs = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (secs < 60) return "just now";
+  if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+  if (secs < 172800) return `${Math.round(secs / 3600)} h ago`;
+  return `${Math.round(secs / 86400)} days ago`;
+}
+
+/* Accuracy axis for every confidence-interval bar on the page. */
+const AX_LO = 0.40, AX_HI = 0.75;
+const axpos = (v) => Math.max(0, Math.min(100, (v - AX_LO) / (AX_HI - AX_LO) * 100));
+
+function ciBar(acc, lo, hi, significant) {
+  const l = axpos(lo), r = axpos(hi);
+  return `
+    <div class="ci ${significant ? "sig" : "ns"}">
+      <div class="rail"></div>
+      <div class="flip" style="left:${axpos(0.5)}%"></div>
+      <div class="band" style="left:${l}%;width:${Math.max(r - l, 1.5)}%"></div>
+      <div class="dot" style="left:${axpos(acc)}%"></div>
+    </div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   Tabs
+   --------------------------------------------------------------------------- */
+
+function buildTabs() {
+  $("#tabs").innerHTML = TABS.map((t) => `
+    <button role="tab" data-tab="${t.id}" aria-selected="${t.id === active}">
+      ${t.label}<span class="count" data-count="${t.id}" hidden></span>
+    </button>`).join("");
+
+  $("#tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-tab]");
+    if (btn) show(btn.dataset.tab);
+  });
+}
+
+function setCount(tab, n) {
+  const el = document.querySelector(`[data-count="${tab}"]`);
+  if (!el) return;
+  el.textContent = n;
+  el.hidden = n === null || n === undefined;
+}
+
+function show(tab) {
+  active = tab;
+  TABS.forEach((t) => {
+    $("#p-" + t.id).hidden = t.id !== tab;
+    document.querySelector(`[data-tab="${t.id}"]`).setAttribute(
+      "aria-selected", String(t.id === tab));
+  });
+  window.scrollTo({ top: 0, behavior: "instant" });
+  if (!loaded.has(tab)) load(tab);
+}
+
+function skeleton(el, n = 3) {
+  el.innerHTML = Array.from({ length: n }, () => '<div class="skeleton"></div>').join("");
+}
+
+function failed(el, err, hint) {
+  el.innerHTML = `
+    <div class="empty">
+      <div class="mark">⚠</div>
+      <h3>Could not load</h3>
+      <p>${esc(err.message)}</p>
+      ${hint ? `<div class="aside">${hint}</div>` : ""}
+    </div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   Signals
+   --------------------------------------------------------------------------- */
+
+function ticketLine(label, value, extraClass = "", sub = "") {
+  return `
+    <button class="line ${extraClass}" data-copy="${esc(value)}">
+      <span class="k">${esc(label)}</span>
+      ${sub ? `<span class="sub">${esc(sub)}</span>` : ""}
+      <span class="v">${esc(value)}</span>
+      <span class="cp">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="12" height="12" rx="2"/>
+          <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+        </svg>
+      </span>
+    </button>`;
+}
+
+function signalCard(s) {
+  const side = s.direction.toLowerCase();
+  const grade = (s.quality || "").toLowerCase();
+  const mins = Math.max(0, Math.round(s.minutes_remaining ?? 0));
+
+  const d = s.digits;
+  const tps = (s.take_profits || [])
+    .map((tp, i) => ticketLine(`Take profit ${i + 1}`, price(tp, d), "tp"))
+    .join("");
+
+  const measured = s.measured_accuracy === null || s.measured_accuracy === undefined
+    ? `<div class="stat"><div class="lab">Measured accuracy</div>
+         <div class="val unproven">no track record</div></div>`
+    : `<div class="stat"><div class="lab">Measured accuracy</div>
+         <div class="val measured">${pct(s.measured_accuracy)}</div></div>`;
+
+  const warnings = (s.warnings || []).map(
+    (w) => `<div class="warn-item"><span>!</span><span>${esc(w)}</span></div>`).join("");
+
+  return `
+  <article class="card">
+    <div class="card-top">
+      <span class="side ${side}">${esc(s.direction)}</span>
+      <span class="sym">${esc(s.mt5_symbol)}</span>
+      <span class="chip">${esc(s.timeframe)}</span>
+      <span class="grade ${grade}">${esc(s.quality || "")}</span>
+    </div>
+
+    <div class="ticket">
+      ${ticketLine("Entry", price(s.entry, d))}
+      ${ticketLine("Stop loss", price(s.stop_loss, d), "sl",
+                   `${Math.round(s.stop_distance_pips)} pips`)}
+      ${tps}
+      ${ticketLine("Lot size", s.lots, "", `risk ${fixed(s.risk_percent, 2)}%`)}
+    </div>
+    <div class="hint">Tap any row to copy it for MetaTrader.</div>
+
+    <div class="evidence">
+      <div class="stat-row">
+        ${measured}
+        <div class="stat"><div class="lab">Expectancy</div>
+          <div class="val">${s.expectancy_r >= 0 ? "+" : ""}${fixed(s.expectancy_r, 2)}R</div></div>
+        <div class="stat"><div class="lab">Reward : risk</div>
+          <div class="val">1 : ${fixed(s.reward_risk, 1)}</div></div>
+        <div class="stat"><div class="lab">Model says</div>
+          <div class="val">${pct(s.model_confidence)}</div></div>
+        <div class="stat"><div class="lab">Expires in</div>
+          <div class="val">${mins} min</div></div>
+      </div>
+      ${s.reasoning ? `<details><summary>Why this trade</summary>
+         <p>${esc(s.reasoning)}</p></details>` : ""}
+      ${warnings}
+    </div>
+  </article>`;
+}
+
+function renderSignals(data) {
+  const el = $("#p-signals");
+  const list = (data.signals || []).filter((s) => s.is_actionable !== false);
+  setCount("signals", list.length);
+
+  // `watchlist` holds markets flagged as interesting, which is usually empty;
+  // the honest count of what was actually looked at is in the rankings.
+  const evaluated = new Set((data.rankings || []).map((r) => r.symbol)).size;
+  const watching = (data.watchlist || []).length;
+  const stamp = `<p class="stamp">Updated ${ago(data.generated_at)} · ${
+    evaluated} instrument${evaluated === 1 ? "" : "s"} evaluated${
+    watching ? ` · ${watching} on watch` : ""}</p>`;
+
+  if (!list.length) {
+    el.innerHTML = stamp + `
+      <div class="empty">
+        <div class="mark">◎</div>
+        <h3>Nothing clears the bar</h3>
+        <p>No setup currently passes the confidence, cost and regime filters.
+           This is the engine working, not the engine failing.</p>
+        <div class="aside">Not trading is a position. Most runs end here —
+          the filters exist to produce this answer often.</div>
+      </div>` + (data.market_summary
+        ? `<div class="note">${esc(data.market_summary)}</div>` : "");
+    return;
+  }
+
+  el.innerHTML = stamp + list.map(signalCard).join("") + `
+    <div class="note alarm"><b>Check before you place it.</b> Confirm the symbol
+    matches your Market Watch and that the lot size is what you intend. The
+    engine cannot see your account.</div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   Hunt
+   --------------------------------------------------------------------------- */
+
+function renderHunt(data) {
+  const el = $("#p-hunt");
+  const rows = data.results || [];
+  setCount("hunt", rows.length);
+
+  if (!rows.length) { failed(el, new Error("No instruments could be surveyed.")); return; }
+
+  const row = (r) => {
+    const bar = Math.max(2, Math.min(100, r.score));
+    const cls = r.score >= 55 ? "hot" : r.score >= 30 ? "" : "cold";
+    const flags = [];
+    if (r.market_open === false) flags.push('<span class="tag bad">closed</span>');
+    if (!r.tradable_cost) flags.push('<span class="tag bad">costs dominate</span>');
+    if (r.vol_expansion > 1.2) flags.push('<span class="tag ok">expanding</span>');
+    if (r.efficiency_ratio < 0.15) flags.push('<span class="tag no">chop</span>');
+    if (r.has_model) flags.push('<span class="tag ok">model</span>');
+
+    return `
+      <div class="row${r.market_open === false ? " shut" : ""}">
+        <div class="name">${esc(r.symbol)}
+          <span class="tf">${esc(r.mt5_symbol)}</span></div>
+        <div class="right">${fixed(r.score, 1)}</div>
+        <div class="full"><div class="meter"><i class="${cls}"
+             style="width:${bar}%"></i></div></div>
+        <div class="meta">
+          ATR ${fixed(r.atr_pct, 2)}% ·
+          cost ${fixed(r.cost_ratio, 1)}× ·
+          vol ${Math.round(r.vol_percentile)}th pct ·
+          expand ${fixed(r.vol_expansion, 2)} ·
+          eff ${fixed(r.efficiency_ratio, 2)}
+          ${flags.join("")}
+        </div>
+      </div>`;
+  };
+
+  // Closed markets score zero by design; grouping them keeps them out of the
+  // ranking without hiding the fact that they were surveyed.
+  const live = rows.filter((r) => r.market_open !== false);
+  const shut = rows.filter((r) => r.market_open === false);
+  const body = live.map(row).join("");
+  const shutBlock = shut.length ? `
+    <div class="h">Closed right now (${shut.length})</div>
+    <div class="note"><b>Scored zero deliberately.</b> These markets are shut,
+      so their latest bars are from the previous session and there is no price
+      to trade at. They reappear in the ranking when their session opens.</div>
+    <div class="card">${shut.map(row).join("")}</div>` : "";
+
+  el.innerHTML = `
+    <p class="stamp">${esc(data.timeframe)} · updated ${ago(data.generated_at)}</p>
+    <div class="note"><b>What this ranks.</b> How much each market is moving
+      relative to <em>its own</em> history, divided by what it costs to trade.
+      <b>Cost</b> is how many round-trip spreads one ATR pays for; below 1.5 the
+      instrument is dropped whatever it does. It says nothing about direction —
+      a high score means worth studying, not predictable.</div>
+    ${body ? `<div class="card">${body}</div>`
+           : `<div class="empty"><div class="mark">◷</div>
+                <h3>Every market is closed</h3>
+                <p>Nothing surveyed is currently open for trading. Come back
+                   when a session starts.</p></div>`}
+    <div class="note">${esc(data.summary || "")}</div>
+    ${shutBlock}`;
+}
+
+/* ---------------------------------------------------------------------------
+   Models
+   --------------------------------------------------------------------------- */
+
+function renderModels(data) {
+  const el = $("#p-models");
+  const list = (data.models || []).slice().sort((a, b) => b.accuracy - a.accuracy);
+  setCount("models", list.length);
+
+  if (!list.length) {
+    el.innerHTML = `
+      <div class="empty">
+        <div class="mark">◌</div>
+        <h3>No models trained yet</h3>
+        <p>Run <code>train.bat</code> (Windows) or
+           <code>python -m signalforge.cli train</code>. It takes roughly
+           30 minutes for seven symbols across two timeframes.</p>
+      </div>`;
+    return;
+  }
+
+  const rows = list.map((m) => {
+    // The interval comes from the engine, computed on the overlap-adjusted
+    // sample. Deriving one here from `samples` would be far too narrow —
+    // BTCUSDT H1 has 10,164 rows but only ~1,269 independent observations, and
+    // the naive interval would call it significant when the engine does not.
+    const hasCI = m.effective_samples > 0;
+    const lo = m.accuracy_ci_low, hi = m.accuracy_ci_high;
+    const sig = !!m.significant;
+
+    const badge = !hasCI
+      ? '<span class="tag no">no interval — retrain</span>'
+      : sig ? '<span class="tag ok">clears a coin flip</span>'
+            : '<span class="tag no">not significant</span>';
+
+    const bar = hasCI ? ciBar(m.accuracy, lo, hi, sig) : "";
+    const interval = hasCI
+      ? `95% CI ${pct(lo, 1)}–${pct(hi, 1)} · ${m.effective_samples} independent
+         of ${m.samples} rows`
+      : `${m.samples} rows · interval unavailable until retrained`;
+
+    return `
+      <div class="row">
+        <div class="name">${esc(m.symbol)}<span class="tf">${esc(m.timeframe)}</span>
+          ${m.enabled ? "" : '<span class="tag bad">disabled</span>'}${badge}</div>
+        <div class="right">${pct(m.accuracy, 1)}</div>
+        <div class="full">${bar}</div>
+        <div class="meta">${interval} · trained ${ago(m.trained_at)}</div>
+      </div>`;
+  }).join("");
+
+  const significant = list.filter((m) => m.significant).length;
+
+  el.innerHTML = `
+    <p class="stamp">${list.length} models · ${significant} clear a coin flip ·
+      mean accuracy ${pct(list.reduce((a, m) => a + m.accuracy, 0) / list.length, 1)}</p>
+    <div class="note"><b>Read the bar, not the number.</b> The dot is the point
+      estimate, the band is the 95% interval, the vertical line is a coin flip.
+      A model whose band touches that line has not demonstrated an edge,
+      whatever its headline figure says.<br><br>
+      <b>“Independent” is the number that counts.</b> Triple-barrier labels
+      overlap, so consecutive rows describe the same market move — 10,000 rows
+      with a six-bar span is closer to 1,600 real observations, and the interval
+      above is computed on that smaller figure. It is why a 64% model on 93
+      observations is weaker evidence than a 52% model on 1,269.</div>
+    <div class="card">
+      <div class="scale">
+        <span>40%</span><span>coin flip</span><span>58%</span><span>66%</span><span>75%</span>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   Journal
+   --------------------------------------------------------------------------- */
+
+function renderJournal(data) {
+  const el = $("#p-journal");
+  const s = data.summary || {};
+  const buckets = data.calibration || [];
+  const total = s.closed ?? 0;
+  setCount("journal", total || null);
+
+  if (!total) {
+    el.innerHTML = `
+      <div class="empty">
+        <div class="mark">◍</div>
+        <h3>No closed trades yet</h3>
+        <p>Every signal is recorded here and resolved against what the market
+           actually did afterwards. Once trades close, this page compares live
+           results against what the models promised.</p>
+        <div class="aside">Paper trade for at least 100 signals before risking
+          money. If live results are worse than the backtest, believe the live
+          results.</div>
+      </div>`;
+    return;
+  }
+
+  // A filesystem path and a placeholder message are not statistics.
+  const SKIP = new Set(["path", "message"]);
+  const AS_PCT = new Set(["win_rate"]);
+  const stats = Object.entries(s)
+    .filter(([k, v]) => !SKIP.has(k) && v !== null && v !== undefined)
+    .map(([k, v]) => {
+      const shown = AS_PCT.has(k) ? pct(v, 1)
+                  : typeof v === "number" ? fixed(v, Number.isInteger(v) ? 0 : 2)
+                  : esc(v);
+      return `<div class="stat"><div class="lab">${esc(k.replace(/_/g, " "))}</div>
+        <div class="val">${shown}</div></div>`;
+    }).join("");
+
+  const table = buckets.length ? `
+    <div class="h">Promised versus delivered</div>
+    <div class="card scroller">
+      <table class="grid">
+        <thead><tr><th>Confidence band</th><th>Trades</th>
+          <th>Promised</th><th>Delivered</th><th>Gap</th></tr></thead>
+        <tbody>${buckets.map((b) => {
+          const promised = b.mean_confidence ?? 0;
+          const delivered = b.win_rate ?? 0;
+          const gap = delivered - promised;
+          const cls = gap < -0.10 ? "tag bad" : gap < 0 ? "tag no" : "tag ok";
+          return `<tr>
+            <td class="n">${esc(b.range ?? "—")}</td>
+            <td class="n">${b.trades ?? "—"}</td>
+            <td class="n">${pct(promised, 1)}</td>
+            <td class="n">${pct(delivered, 1)}</td>
+            <td class="n"><span class="${cls}">${gap >= 0 ? "+" : ""}${
+              fixed(gap * 100, 1)}pp</span></td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : "";
+
+  el.innerHTML = `
+    <div class="card"><div class="evidence"><div class="stat-row">${stats}</div></div></div>
+    ${table}
+    <div class="note"><b>The gap column is the one that matters.</b> Near zero
+      means the models are calibrated. Persistently below −10 points means they
+      promise more than they deliver — cut position size and investigate before
+      trading further.</div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   Setup
+   --------------------------------------------------------------------------- */
+
+function renderSetup(data) {
+  const el = $("#p-setup");
+  const maps = data.mappings || [];
+  const blocked = data.unaffordable || [];
+  setCount("setup", blocked.length || null);
+
+  const mapRows = maps.map((m) => `
+    <tr>
+      <td class="n">${esc(m.symbol)}</td>
+      <td class="n"><b>${esc(m.mt5_symbol)}</b>${
+        m.source === "default" ? '<span class="tag no">default</span>' : ""}</td>
+      <td class="n">${fixed(m.spread_pips, 1)}</td>
+      <td class="n">${sig3(m.spread_price_units)}</td>
+    </tr>`).join("");
+
+  const blockedBlock = blocked.length ? `
+    <div class="h">Cannot be traded at your settings</div>
+    <div class="note alarm"><b>These will never produce a signal.</b> The
+      smallest position your broker allows risks more than your
+      ${esc(data.account_currency)} ${fixed(data.risk_budget, 2)} budget, and
+      sizing rounds down rather than up. Raise the balance, raise the risk
+      percentage, or drop them from the watchlist —
+      <b>do not assume the model is at fault</b>.</div>
+    <div class="card scroller">
+      <table class="grid">
+        <thead><tr><th>Symbol</th><th>TF</th>
+          <th>Needs</th><th>Min-lot risk</th></tr></thead>
+        <tbody>${blocked.map((b) => `
+          <tr><td class="n">${esc(b.symbol)}</td><td class="n">${esc(b.timeframe)}</td>
+            <td class="n">${fixed(b.minimum_balance, 0)}</td>
+            <td class="n"><span class="tag bad">${fixed(b.minimum_lot_risk, 2)}</span></td>
+          </tr>`).join("")}</tbody>
+      </table>
+    </div>` : `
+    <div class="note"><b>Every watchlist combination is tradable</b> at the
+      minimum lot size with your current balance and risk setting.</div>`;
+
+  el.innerHTML = `
+    <div class="h">Account</div>
+    <div class="card"><div class="evidence"><div class="stat-row">
+      <div class="stat"><div class="lab">Balance</div>
+        <div class="val">${fixed(data.account_balance, 0)} ${esc(data.account_currency)}</div></div>
+      <div class="stat"><div class="lab">Risk per trade</div>
+        <div class="val">${fixed(data.risk_percent, 2)}%</div></div>
+      <div class="stat"><div class="lab">Budget per trade</div>
+        <div class="val">${fixed(data.risk_budget, 2)}</div></div>
+      <div class="stat"><div class="lab">Timeframes</div>
+        <div class="val">${(data.timeframes || []).join(" ")}</div></div>
+    </div></div></div>
+
+    <div class="h">MT5 symbol names</div>
+    <div class="note"><b>Check every one of these against Market Watch.</b> Open
+      MetaTrader 5, tap <code>+</code> in Quotes, and search for the bold name.
+      A signal naming a symbol you cannot find is a signal you cannot trade.
+      Rows marked <span class="tag no">default</span> are the engine's guess,
+      not your broker's confirmed name.</div>
+    <div class="card scroller">
+      <table class="grid">
+        <thead><tr><th>Engine</th><th>Your MT5</th>
+          <th>Spread</th><th>In price</th></tr></thead>
+        <tbody>${mapRows}</tbody>
+      </table>
+    </div>
+
+    ${blockedBlock}
+
+    <div class="note"><b>Spreads decide whether a backtest is honest.</b> The
+      values above are conservative retail estimates. Measure your broker's real
+      average spread during the hours you actually trade, put it in
+      <code>config/config.yaml</code>, and retrain. The numbers will get worse —
+      that is the point.</div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   Loading
+   --------------------------------------------------------------------------- */
+
+const LOADERS = {
+  signals: { url: () => "/signals",        render: renderSignals, skel: 2,
+             hint: "Is the server still running? Check the terminal window." },
+  hunt:    { url: () => "/api/hunt?timeframe=H1&limit=25", render: renderHunt, skel: 4,
+             hint: "Surveying 30+ markets takes a few seconds on the first run." },
+  models:  { url: () => "/models",         render: renderModels, skel: 4 },
+  journal: { url: () => "/journal",        render: renderJournal, skel: 2 },
+  setup:   { url: () => "/api/setup",      render: renderSetup,  skel: 3,
+             hint: "This prices every watchlist combination, so it is slow." },
+};
+
+async function load(tab, force = false) {
+  const spec = LOADERS[tab];
+  if (!spec) return;
+  const el = $("#p-" + tab);
+  if (force || !loaded.has(tab)) skeleton(el, spec.skel);
+  try {
+    const data = await api(spec.url());
+    cache[tab] = data;
+    loaded.add(tab);
+    spec.render(data);
+  } catch (err) {
+    failed(el, err, spec.hint);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Wiring
+   --------------------------------------------------------------------------- */
+
+function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem("sf-theme"); } catch { /* private mode */ }
+  if (saved) document.documentElement.dataset.theme = saved;
+
+  $("#theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    const now = root.dataset.theme === "light" ? "dark" : "light";
+    root.dataset.theme = now;
+    try { localStorage.setItem("sf-theme", now); } catch { /* ignore */ }
+  });
+}
+
+document.addEventListener("click", (e) => {
+  const line = e.target.closest("[data-copy]");
+  if (line) copy(line.dataset.copy, line);
+});
+
+buildTabs();
+initTheme();
+
+$("#refresh").addEventListener("click", () => load(active, true));
+
+api("/health")
+  .then((h) => { $("#ver").textContent = "v" + (h.version || ""); })
+  .catch(() => { /* the tab load will surface any real problem */ });
+
+load("signals");
+
+// Signals go stale; the other tabs do not change on their own.
+setInterval(() => { if (active === "signals" && !document.hidden) load("signals", true); },
+            90000);
+</script>
+</body>
+</html>
