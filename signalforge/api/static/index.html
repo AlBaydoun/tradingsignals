@@ -737,6 +737,7 @@ function renderHunt(data) {
 
   if (!rows.length) { failed(el, new Error("No instruments could be surveyed.")); return; }
 
+
   const row = (r) => {
     const bar = Math.max(2, Math.min(100, r.score));
     const cls = r.score >= 55 ? "hot" : r.score >= 30 ? "" : "cold";
@@ -777,6 +778,28 @@ function renderHunt(data) {
       to trade at. They reappear in the ranking when their session opens.</div>
     <div class="card">${shut.map(row).join("")}</div>` : "";
 
+  // Binance lists hundreds of pairs the engine has no model or cost figures
+  // for. They are market context, and the copy has to say so plainly.
+  const mv = data.crypto_movers || [];
+  const movers = mv.length ? `
+    <div class="h">Market-wide crypto movers (24h)</div>
+    <div class="note alarm"><b>Context only — not candidates.</b> These come
+      from the whole Binance listing, not the engine's universe. There is no
+      model, no measured spread and usually no CFD at your broker. A large
+      24-hour move is the least predictive thing on this page.</div>
+    <div class="card scroller">
+      <table class="grid">
+        <thead><tr><th>Pair</th><th>24h</th><th>Volume</th></tr></thead>
+        <tbody>${mv.map((m) => `
+          <tr><td class="n">${esc(m.symbol)}</td>
+            <td class="n" style="color:${m.price_change_pct >= 0
+              ? "var(--buy)" : "var(--sell)"}">${
+              m.price_change_pct >= 0 ? "+" : ""}${fixed(m.price_change_pct, 2)}%</td>
+            <td class="n">$${fixed(m.quote_volume / 1e6, 0)}M</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>` : "";
+
   el.innerHTML = `
     <p class="stamp">${esc(data.timeframe)} · updated ${ago(data.generated_at)}</p>
     <div class="note"><b>What this ranks.</b> How much each market is moving
@@ -790,7 +813,8 @@ function renderHunt(data) {
                 <p>Nothing surveyed is currently open for trading. Come back
                    when a session starts.</p></div>`}
     <div class="note">${esc(data.summary || "")}</div>
-    ${shutBlock}`;
+    ${shutBlock}
+    ${movers}`;
 }
 
 /* ---------------------------------------------------------------------------

@@ -188,6 +188,35 @@ class LearningConfig:
 
 
 @dataclass
+class MarketWatchConfig:
+    """Sweeping the wider market for movement, without trading it.
+
+    Two different activities, deliberately separated. The `watchlist` is what
+    the engine has *trained and validated* models for, and is the only thing it
+    will ever produce a trade for. This is everything else: instruments it can
+    price and therefore watch, but has no measured edge on.
+
+    Watching is cheap and safe. Trading needs a model, and every extra model
+    trained makes the multiple-comparison correction harsher for all of them —
+    which is why the answer to "watch everything" is not "train everything".
+    """
+
+    enabled: bool = True
+    # "all" sweeps every instrument in the universe; "markets" restricts to the
+    # named market types; "none" disables the sweep without touching `enabled`.
+    mode: str = "all"
+    markets: list[str] = field(default_factory=list)
+    timeframe: str = "H1"
+    # Sweeping is slower than generating signals, so it runs every Nth cycle.
+    sweep_every_cycles: int = 4
+    # Report an instrument only if it scores at least this on the hunt ranking.
+    min_score: float = 45.0
+    # Also poll Binance for market-wide crypto movers beyond the universe.
+    crypto_movers: bool = True
+    max_reported: int = 8
+
+
+@dataclass
 class Config:
     data: DataConfig = field(default_factory=DataConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
@@ -197,6 +226,7 @@ class Config:
     signals: SignalConfig = field(default_factory=SignalConfig)
     reasoning: ReasoningConfig = field(default_factory=ReasoningConfig)
     learning: LearningConfig = field(default_factory=LearningConfig)
+    market_watch: MarketWatchConfig = field(default_factory=MarketWatchConfig)
 
     # Which instruments and timeframes the engine is allowed to trade.
     watchlist: list[str] = field(
@@ -279,6 +309,7 @@ def load_config(path: str | Path | None = None) -> Config:
         signals=SignalConfig(**merged["signals"]),
         reasoning=ReasoningConfig(**merged["reasoning"]),
         learning=LearningConfig(**merged["learning"]),
+        market_watch=MarketWatchConfig(**merged["market_watch"]),
         watchlist=merged["watchlist"],
         timeframes=merged["timeframes"],
         mt5_symbol_suffix=merged["mt5_symbol_suffix"],

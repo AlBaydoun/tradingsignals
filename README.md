@@ -186,6 +186,34 @@ compared cross-sectionally.
 worth studying, not that it is predictable. `train` and `backtest` answer that,
 and usually the answer is no.
 
+### Watching the whole market
+
+The `watchlist` is what gets **traded**: instruments with a trained,
+walk-forward-validated model. It is small on purpose — every extra model makes
+the Benjamini-Hochberg correction harsher for all of them, so training
+everything guarantees something looks good by chance.
+
+`market_watch` in the config is what gets **watched**: every instrument the
+engine can price, swept for unusual movement on a slower cycle, plus the
+market-wide Binance movers. It reports observations and never a trade:
+
+```
+  Swept 31 instruments (10 open) on H1. 3 worth a look: XRPUSDT, SOLUSDT, BTCUSDT
+    XRPUSDT     35.2   +0.61%  but the movement is chop, not travel
+               no model — this is a market to look at, never a trade to take
+  * BTCUSDT     24.0   +0.69%  2.4 ATR up over 20 bars
+```
+
+Watching is cheap and safe. Trading needs a validated model. `watch` runs both
+loops at different rates; `--no-sweep` turns the wide one off.
+
+### Where to run it
+
+See [`docs/HOSTING.md`](docs/HOSTING.md). Short version: your own PC while you
+are still verifying it, a $5 VPS once you have a track record worth running
+overnight. A one-command installer with systemd units is in
+[`deploy/vps-setup.sh`](deploy/vps-setup.sh).
+
 ### The dashboard
 
 ```bash

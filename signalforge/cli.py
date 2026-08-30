@@ -709,21 +709,45 @@ def _local_addresses() -> list[str]:
 
 
 def cmd_watch(args, config: Config) -> int:
+    """Run continuously: signals on the trained watchlist, sweeps everywhere else.
+
+    Two loops at different rates, because they answer different questions and
+    cost different amounts. Signals are for instruments with a validated model
+    and run every cycle. The market sweep prices the whole universe, is slower,
+    and produces observations rather than trades.
+    """
     from signalforge.learning import LearningLoop
+    from signalforge.marketwatch import format_sweep, sweep, symbols_for
+    from signalforge.models import ModelRegistry
     from signalforge.signals import SignalEngine, format_bundle
 
     engine = SignalEngine(config)
     loop = LearningLoop(config, router=engine.router)
     interval = args.interval
 
+    watch_cfg = config.market_watch
+    sweeping = watch_cfg.enabled and not args.no_sweep and watch_cfg.mode != "none"
+    swept_symbols = symbols_for(watch_cfg) if sweeping else []
+
     print(f"Watching. Regenerating signals every {interval}s. Ctrl-C to stop.")
+    print(f"  trading:  {len(config.watchlist)} instruments with trained models")
+    if sweeping:
+        every = max(1, watch_cfg.sweep_every_cycles)
+        print(
+            f"  watching: {len(swept_symbols)} instruments swept on "
+            f"{watch_cfg.timeframe} every {every} cycles "
+            f"(~{interval * every // 60} min)"
+        )
+        print("            sweeps report movement, never a trade")
     print()
 
+    cycle = 0
     try:
         while True:
             started = time.time()
+            cycle += 1
             stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
-            print(f"\n[{stamp}] running...")
+            print(f"\n[{stamp}] cycle {cycle}")
 
             try:
                 learning = loop.run_once(retrain=False)
@@ -734,13 +758,26 @@ def cmd_watch(args, config: Config) -> int:
 
             try:
                 bundle = engine.generate(use_reasoning=not args.no_reasoning)
-                actionable = bundle.actionable
-                if actionable:
+                if bundle.actionable:
                     print(format_bundle(bundle, verbose=False))
                 else:
                     print(f"  no signals ({len(bundle.watchlist)} on watch)")
             except Exception as exc:
                 print(f"  generation failed: {exc}")
+
+            if sweeping and (cycle == 1 or cycle % max(1, watch_cfg.sweep_every_cycles) == 0):
+                try:
+                    trained = {
+                        e.symbol
+                        for e in ModelRegistry(config.model.model_dir).list_models()
+                    }
+                    print()
+                    print(format_sweep(
+                        sweep(engine.router, watch_cfg, trained=trained),
+                        watchlist=config.watchlist,
+                    ))
+                except Exception as exc:
+                    print(f"  market sweep failed: {exc}")
 
             elapsed = time.time() - started
             time.sleep(max(5.0, interval - elapsed))
@@ -828,6 +865,8 @@ def build_parser() -> argparse.ArgumentParser:
     watch = sub.add_parser("watch", help="run continuously")
     watch.add_argument("--interval", type=int, default=300)
     watch.add_argument("--no-reasoning", action="store_true")
+    watch.add_argument("--no-sweep", action="store_true",
+                       help="signals only; skip the wider market sweep")
     watch.set_defaults(func=cmd_watch)
 
     return parser

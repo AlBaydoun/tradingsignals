@@ -195,6 +195,34 @@ reasoning:
   timeout_seconds: 120
 
 # ---------------------------------------------------------------------------
+# Watching the wider market
+# ---------------------------------------------------------------------------
+# Two different activities, deliberately separated.
+#
+# The `watchlist` above is what gets TRADED: instruments with a trained,
+# walk-forward-validated model. It is small on purpose — every extra model
+# makes the multiple-comparison correction harsher for all of them, so
+# training everything guarantees something looks good by chance.
+#
+# This section is what gets WATCHED: every instrument the engine can price. It
+# reports movement and never a trade. Watching is cheap; trading needs a model.
+market_watch:
+  enabled: true
+  # all     — sweep every instrument in the universe (31 of them)
+  # markets — only the market types named below
+  # none    — signals only
+  mode: all
+  markets: [forex, crypto, metals, indices, energy]
+  timeframe: H1
+  # Sweeping prices the whole universe, so it runs every Nth watch cycle
+  # rather than every one. At --interval 300 this is roughly every 20 minutes.
+  sweep_every_cycles: 4
+  min_score: 45.0
+  # Also poll Binance for market-wide movers beyond the 31 instruments.
+  crypto_movers: true
+  max_reported: 8
+
+# ---------------------------------------------------------------------------
 # Continuous learning
 # ---------------------------------------------------------------------------
 learning:

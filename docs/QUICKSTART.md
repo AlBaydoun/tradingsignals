@@ -267,6 +267,35 @@ Retrain about once a week: `python -m signalforge.cli learn --retrain`.
 
 ---
 
+## Step 5b — Watching everything, not just your seven
+
+`watch.bat` does two jobs at once.
+
+Every cycle it generates **signals** for your seven trained instruments. Every
+fourth cycle it **sweeps all 31 instruments** the engine can price, plus the
+market-wide Binance movers, and reports anything unusual:
+
+```
+  Swept 31 instruments (10 open) on H1. 3 worth a look: XRPUSDT, SOLUSDT, BTCUSDT
+    XRPUSDT     35.2   +0.61%  but the movement is chop, not travel
+               no model — this is a market to look at, never a trade to take
+
+  Market-wide crypto movers (24h, beyond the universe):
+    ZKCUSDT       +51.15%  vol $7M
+    PROMUSDT      +43.45%  vol $28M
+```
+
+**The sweep never produces a trade.** It cannot: those instruments have no
+trained model, so the engine has no measured edge on them and says so on every
+line. It tells you where to look. Whether to add one to your watchlist and
+train it is your call — and the more you train, the harsher the statistical
+correction becomes for all of them.
+
+Turn it off with `--no-sweep`, or edit `market_watch:` in `config/config.yaml`
+to narrow it to particular markets.
+
+---
+
 ## Step 6 — Keep it running (optional, do this later)
 
 Once you want signals while you are asleep, run it continuously:
@@ -285,17 +314,19 @@ python -m signalforge.cli watch --interval 300
 # Ctrl-A then D to detach. `screen -r forge` to come back.
 ```
 
-**A $5 VPS** (Hetzner, DigitalOcean, Contabo — any of them) is enough. Pick
-Ubuntu 22.04 or newer, then:
+**A $5 VPS** (Hostinger, Hetzner, Contabo, DigitalOcean — any of them) is
+enough. Pick Ubuntu 22.04 or newer, SSH in, and run one command:
 
 ```bash
-sudo apt update && sudo apt install -y python3-venv git
-git clone https://github.com/AlBaydoun/tradingsignals.git
-cd tradingsignals && python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+curl -fsSL https://raw.githubusercontent.com/AlBaydoun/tradingsignals/main/deploy/vps-setup.sh | bash
 ```
 
-...and carry on from Step 2.
+That installs everything and registers systemd services so it starts at boot
+and restarts itself if it crashes. Full detail, including how to read the
+dashboard safely over an SSH tunnel, is in [`HOSTING.md`](HOSTING.md).
+
+Note: this needs Hostinger's **VPS** product, not their shared web hosting.
+Shared hosting cannot run a long-lived process or install LightGBM.
 
 ---
 

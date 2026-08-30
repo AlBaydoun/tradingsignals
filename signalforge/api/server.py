@@ -260,11 +260,38 @@ def api_hunt(
         models=trained,
         limit=limit,
     )
+    # Binance lists far more than the engine's universe. These are reported as
+    # market context only — there is no model, no cost model and no CFD for
+    # most of them, so they are never candidates for a trade.
+    movers: list[dict] = []
+    if _config.market_watch.crypto_movers:
+        try:
+            movers = engine.router.scan_crypto_movers(8)
+        except Exception as exc:
+            log.debug("Crypto mover scan failed: %s", exc)
+
     return {
         "timeframe": timeframe,
         "generated_at": now.isoformat(),
         "summary": describe(results),
         "results": [r.to_dict() for r in results],
+        "crypto_movers": movers,
+    }
+
+
+@app.get("/api/sweep")
+def api_sweep() -> dict:
+    """One pass over the wider market: what is moving, nothing about direction."""
+    from signalforge.marketwatch import sweep
+    from signalforge.models import ModelRegistry
+
+    engine = get_engine()
+    trained = {e.symbol for e in ModelRegistry(_config.model.model_dir).list_models()}
+    result = sweep(engine.router, _config.market_watch, trained=trained)
+    return {
+        **result.to_dict(),
+        "summary": result.describe(),
+        "watchlist": _config.watchlist,
     }
 
 
