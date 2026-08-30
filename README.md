@@ -209,10 +209,20 @@ loops at different rates; `--no-sweep` turns the wide one off.
 
 ### Where to run it
 
-See [`docs/HOSTING.md`](docs/HOSTING.md). Short version: your own PC while you
-are still verifying it, a $5 VPS once you have a track record worth running
-overnight. A one-command installer with systemd units is in
-[`deploy/vps-setup.sh`](deploy/vps-setup.sh).
+See [`docs/HOSTING.md`](docs/HOSTING.md), or
+[`docs/HOSTINGER.md`](docs/HOSTINGER.md) for a click-by-click Hostinger
+walkthrough. Short version: your own PC while you are still verifying it, a $5
+VPS once you have a track record worth running overnight.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AlBaydoun/tradingsignals/main/deploy/vps-setup.sh | bash
+```
+
+[`deploy/vps-setup.sh`](deploy/vps-setup.sh) installs Python, creates an
+unprivileged service account, and registers systemd units so the engine
+survives reboots. It binds the dashboard to localhost — the page has no
+authentication and a VPS has a public IP — and prints the SSH tunnel to read it
+through.
 
 ### The dashboard
 

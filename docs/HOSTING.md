@@ -47,11 +47,18 @@ engine cannot fetch prices while the machine is suspended.
 Any Ubuntu 22.04+ box. Hostinger's cheapest VPS is plenty; so is Hetzner's
 CX22 or a Contabo VPS S. You need 1 GB of RAM and about 3 GB of disk.
 
+**On Hostinger specifically, there is a click-by-click walkthrough in
+[`HOSTINGER.md`](HOSTINGER.md)** — buying the right product, connecting,
+installing, and reading the dashboard safely.
+
 SSH in, then:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AlBaydoun/tradingsignals/main/deploy/vps-setup.sh | bash
 ```
+
+Run it as root — Hostinger gives you a root login, and the installer creates an
+unprivileged `signalforge` account to actually run the services.
 
 That installs everything and registers two systemd services, so the engine
 starts at boot and restarts itself if it crashes. It deliberately does **not**
@@ -102,7 +109,12 @@ crontab -e
 Shared web hosting — the cPanel kind, meant for WordPress — will not work.
 There is no long-running process, no ability to install compiled Python
 packages like LightGBM, and no background scheduler you control. You need their
-**VPS** product, not their web hosting.
+**VPS** product, not their web hosting. The KVM 1 plan (1 vCPU, 4 GB RAM) is
+more than enough; the engine uses about 1 GB of RAM and 3 GB of disk.
+
+When choosing the operating system, pick plain **Ubuntu 24.04**, not a template
+bundled with CyberPanel, cPanel or Plesk — those install a web control panel
+you do not need and that competes for port 8000.
 
 ---
 
